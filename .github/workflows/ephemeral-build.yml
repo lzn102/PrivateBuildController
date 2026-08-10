@@ -36,6 +36,15 @@ jobs:
           tags: ${{ secrets.TAILSCALE_TAGS }}
           use-cache: false
 
+      - name: Resolve private endpoint
+        env:
+          PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
+          PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
+        run: |
+          [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
+          printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
+
       - name: Prepare source
         env:
           GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
@@ -72,6 +81,15 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: ${{ secrets.TAILSCALE_TAGS }}
           use-cache: false
+
+      - name: Resolve private endpoint
+        env:
+          PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
+          PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
+        run: |
+          [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
+          printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
 
       - name: Prepare source
         env:
