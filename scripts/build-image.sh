@@ -2,7 +2,8 @@
 set -euo pipefail
 
 : "${IMAGE_REF:?IMAGE_REF is required}"
-: "${SOURCE_DIR:?SOURCE_DIR is required}"
+: "${RUNNER_TEMP:?RUNNER_TEMP is required}"
+SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
 log="$RUNNER_TEMP/image-build.log"
 if ! docker build --quiet --tag "$IMAGE_REF" "$SOURCE_DIR" >"$log" 2>&1; then

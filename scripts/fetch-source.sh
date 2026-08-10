@@ -3,8 +3,9 @@ set -euo pipefail
 
 : "${BUILD_ID:?BUILD_ID is required}"
 : "${GITEA_SOURCE_TOKEN:?GITEA_SOURCE_TOKEN is required}"
-: "${SOURCE_DIR:?SOURCE_DIR is required}"
 : "${SOURCE_REPO_URL:?SOURCE_REPO_URL is required}"
+: "${RUNNER_TEMP:?RUNNER_TEMP is required}"
+SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
 [[ "$BUILD_ID" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid build identifier" >&2; exit 2; }
 [[ "$SOURCE_REPO_URL" == https://* ]] || { echo "Source endpoint must use HTTPS" >&2; exit 2; }

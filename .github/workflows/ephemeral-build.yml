@@ -22,7 +22,6 @@ jobs:
     timeout-minutes: 30
     env:
       BUILD_ID: ${{ inputs.build_id }}
-      SOURCE_DIR: ${{ runner.temp }}/private-source
     steps:
       - name: Load controller
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -60,7 +59,6 @@ jobs:
       BUILD_ID: ${{ inputs.build_id }}
       IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:${{ inputs.build_id }}
       REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
-      SOURCE_DIR: ${{ runner.temp }}/private-source
     steps:
       - name: Load controller
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

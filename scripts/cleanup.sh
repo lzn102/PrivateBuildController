@@ -5,7 +5,7 @@ docker logout "${REGISTRY_HOST:-}" >/dev/null 2>&1 || true
 docker image rm "${IMAGE_REF:-}" >/dev/null 2>&1 || true
 
 for target in \
-  "${SOURCE_DIR:-}" \
+  "${SOURCE_DIR:-${RUNNER_TEMP:-/tmp}/private-source}" \
   "${RUNNER_TEMP:-}/extension.tar.gz" \
   "${RUNNER_TEMP:-}/extension.tar.gz.sha256" \
   "${RUNNER_TEMP:-}/extension-build.log" \

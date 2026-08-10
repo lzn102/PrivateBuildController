@@ -3,8 +3,9 @@ set -euo pipefail
 
 : "${BUILD_ID:?BUILD_ID is required}"
 : "${GITEA_PACKAGE_TOKEN:?GITEA_PACKAGE_TOKEN is required}"
-: "${SOURCE_DIR:?SOURCE_DIR is required}"
 : "${STAGING_UPLOAD_URL:?STAGING_UPLOAD_URL is required}"
+: "${RUNNER_TEMP:?RUNNER_TEMP is required}"
+SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
 log="$RUNNER_TEMP/extension-build.log"
 archive="$RUNNER_TEMP/extension.tar.gz"
