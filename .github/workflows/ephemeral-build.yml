@@ -43,9 +43,19 @@ jobs:
         run: |
           [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
+          echo "Private endpoint format accepted"
           printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
-          tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null
-          curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null
+          echo "Private endpoint host mapping installed"
+          if ! tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null; then
+            echo "Tailscale peer ping failed" >&2
+            exit 10
+          fi
+          echo "Tailscale peer reachable"
+          if ! curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null; then
+            echo "Private HTTPS endpoint failed" >&2
+            exit 11
+          fi
+          echo "Private HTTPS endpoint reachable"
 
       - name: Prepare source
         env:
@@ -91,9 +101,19 @@ jobs:
         run: |
           [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
+          echo "Private endpoint format accepted"
           printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
-          tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null
-          curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null
+          echo "Private endpoint host mapping installed"
+          if ! tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null; then
+            echo "Tailscale peer ping failed" >&2
+            exit 10
+          fi
+          echo "Tailscale peer reachable"
+          if ! curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null; then
+            echo "Private HTTPS endpoint failed" >&2
+            exit 11
+          fi
+          echo "Private HTTPS endpoint reachable"
 
       - name: Prepare source
         env:
