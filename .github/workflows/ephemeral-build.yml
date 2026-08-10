@@ -1,4 +1,4 @@
-name: Ephemeral private build
+name: Ephemeral private release
 run-name: Build ${{ inputs.build_id }}
 
 on:
@@ -34,28 +34,16 @@ jobs:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: ${{ secrets.TAILSCALE_TAGS }}
+          retry: 1
+          timeout: 30s
+          ping: ${{ secrets.PRIVATE_IP }}
           use-cache: false
 
-      - name: Resolve private endpoint
+      - name: Prepare private endpoint
         env:
           PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
           PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
-        run: |
-          [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
-          [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
-          echo "Private endpoint format accepted"
-          printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
-          echo "Private endpoint host mapping installed"
-          if ! tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null; then
-            echo "Tailscale peer ping failed" >&2
-            exit 10
-          fi
-          echo "Tailscale peer reachable"
-          if ! curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null; then
-            echo "Private HTTPS endpoint failed" >&2
-            exit 11
-          fi
-          echo "Private HTTPS endpoint reachable"
+        run: bash scripts/prepare-private-endpoint.sh
 
       - name: Prepare source
         env:
@@ -63,11 +51,16 @@ jobs:
           SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
         run: bash scripts/fetch-source.sh
 
-      - name: Validate and deliver extension output
+      - name: Package and publish extension
         env:
-          GITEA_PACKAGE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
-          STAGING_UPLOAD_URL: ${{ secrets.STAGING_UPLOAD_URL }}
-        run: bash scripts/build-extension.sh
+          BUNDLED_API_TOKEN: ${{ secrets.BUNDLED_API_TOKEN }}
+          BUNDLED_COLLECTION_ID: ${{ secrets.BUNDLED_COLLECTION_ID }}
+          BUNDLED_ORGANIZATION_ID: ${{ secrets.BUNDLED_ORGANIZATION_ID }}
+          BUNDLED_PROXY_URLS: ${{ secrets.BUNDLED_PROXY_URLS }}
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
+          REPOSITORY_API_URL: ${{ secrets.REPOSITORY_API_URL }}
+          REQUIRE_BUNDLED_CONFIG: "true"
+        run: bash scripts/release-extension.sh
 
       - name: Remove temporary data
         if: always()
@@ -92,28 +85,16 @@ jobs:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: ${{ secrets.TAILSCALE_TAGS }}
+          retry: 1
+          timeout: 30s
+          ping: ${{ secrets.PRIVATE_IP }}
           use-cache: false
 
-      - name: Resolve private endpoint
+      - name: Prepare private endpoint
         env:
           PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
           PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
-        run: |
-          [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
-          [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
-          echo "Private endpoint format accepted"
-          printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
-          echo "Private endpoint host mapping installed"
-          if ! tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null; then
-            echo "Tailscale peer ping failed" >&2
-            exit 10
-          fi
-          echo "Tailscale peer reachable"
-          if ! curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null; then
-            echo "Private HTTPS endpoint failed" >&2
-            exit 11
-          fi
-          echo "Private HTTPS endpoint reachable"
+        run: bash scripts/prepare-private-endpoint.sh
 
       - name: Prepare source
         env:
@@ -129,6 +110,71 @@ jobs:
 
       - name: Build and deliver service image
         run: bash scripts/build-image.sh
+
+      - name: Remove temporary data
+        if: always()
+        run: bash scripts/cleanup.sh
+
+  deploy:
+    needs: [extension, service]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:${{ inputs.build_id }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+    steps:
+      - name: Load controller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Join private network
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ secrets.TAILSCALE_TAGS }}
+          retry: 1
+          timeout: 30s
+          ping: ${{ secrets.PRIVATE_IP }}
+          use-cache: false
+
+      - name: Prepare private endpoint
+        env:
+          PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
+          PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
+        run: bash scripts/prepare-private-endpoint.sh
+
+      - name: Prepare source
+        env:
+          GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+          SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
+        run: bash scripts/fetch-source.sh
+
+      - name: Deploy and verify service
+        env:
+          DEPLOY_DIRECTORY: ${{ secrets.DEPLOY_DIRECTORY }}
+          N100_SSH_HOST: ${{ secrets.N100_SSH_HOST }}
+          N100_SSH_KNOWN_HOSTS: ${{ secrets.N100_SSH_KNOWN_HOSTS }}
+          N100_SSH_PRIVATE_KEY: ${{ secrets.N100_SSH_PRIVATE_KEY }}
+          N100_SSH_USER: ${{ secrets.N100_SSH_USER }}
+          REGISTRY_READ_TOKEN: ${{ secrets.REGISTRY_READ_TOKEN }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          SERVICE_COMPOSE_NAME: ${{ secrets.SERVICE_COMPOSE_NAME }}
+          SERVICE_IMAGE_VARIABLE: ${{ secrets.SERVICE_IMAGE_VARIABLE }}
+          TAILSCALE_COMPOSE_NAME: ${{ secrets.TAILSCALE_COMPOSE_NAME }}
+          TS_DEVICE_TAG: ${{ secrets.TS_DEVICE_TAG }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          TS_TAILNET: "-"
+        run: bash scripts/deploy-service.sh
+
+      - name: Publish release
+        env:
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
+          REPOSITORY_API_URL: ${{ secrets.REPOSITORY_API_URL }}
+        run: bash scripts/publish-release.sh
 
       - name: Remove temporary data
         if: always()
