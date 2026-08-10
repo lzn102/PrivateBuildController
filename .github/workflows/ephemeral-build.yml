@@ -68,7 +68,7 @@ jobs:
 
   service:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       BUILD_ID: ${{ inputs.build_id }}
       IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:${{ inputs.build_id }}
