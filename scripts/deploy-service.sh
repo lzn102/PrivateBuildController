@@ -47,8 +47,11 @@ auth_key=""
 if ! ssh "${ssh_args[@]}" "$target" \
   "DEPLOY_DIRECTORY='$DEPLOY_DIRECTORY' TAILSCALE_COMPOSE_NAME='$TAILSCALE_COMPOSE_NAME' bash -s" <<'REMOTE'
 set -eu
-cd "$HOME/$DEPLOY_DIRECTORY"
-container_id="$(docker compose ps -aq "$TAILSCALE_COMPOSE_NAME" 2>/dev/null || true)"
+deploy_dir="$HOME/$DEPLOY_DIRECTORY"
+container_id="$(docker ps -aq \
+  --filter "label=com.docker.compose.project.working_dir=$deploy_dir" \
+  --filter "label=com.docker.compose.service=$TAILSCALE_COMPOSE_NAME" \
+  | head -n 1)"
 test -n "$container_id"
 state_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/tailscale"}}{{.Name}}{{end}}{{end}}' "$container_id")"
 state_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
