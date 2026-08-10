@@ -24,11 +24,18 @@ tar -C "$SOURCE_DIR/dist" -czf "$archive" .
 sha256sum "$archive" | awk '{print $1}' > "$checksum"
 
 base="${STAGING_UPLOAD_URL%/}/$BUILD_ID"
-curl --fail --silent --show-error \
-  -H "Authorization: token $GITEA_PACKAGE_TOKEN" \
-  --upload-file "$archive" "$base/extension.tar.gz" >/dev/null
-curl --fail --silent --show-error \
-  -H "Authorization: token $GITEA_PACKAGE_TOKEN" \
-  --upload-file "$checksum" "$base/extension.tar.gz.sha256" >/dev/null
+upload() {
+  local source="$1"
+  local destination="$2"
+  local status
+  status="$(curl --silent --show-error \
+    -o /dev/null -w '%{http_code}' \
+    -H "Authorization: token $GITEA_PACKAGE_TOKEN" \
+    --upload-file "$source" "$destination")"
+  [[ "$status" = 201 || "$status" = 204 || "$status" = 409 ]]
+}
+
+upload "$archive" "$base/extension.tar.gz"
+upload "$checksum" "$base/extension.tar.gz.sha256"
 
 echo "Extension output delivered"
