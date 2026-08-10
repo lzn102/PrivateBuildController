@@ -1,0 +1,95 @@
+name: Ephemeral private build
+run-name: Build ${{ inputs.build_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Opaque build identifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ephemeral-${{ inputs.build_id }}
+  cancel-in-progress: false
+
+jobs:
+  extension:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      SOURCE_DIR: ${{ runner.temp }}/private-source
+    steps:
+      - name: Load controller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Join private network
+        uses: tailscale/github-action@6cae46e2d796f265cfcf628b72a32b4d7cade
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ secrets.TAILSCALE_TAGS }}
+          use-cache: false
+
+      - name: Prepare source
+        env:
+          GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+          SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
+        run: bash scripts/fetch-source.sh
+
+      - name: Validate and deliver extension output
+        env:
+          GITEA_PACKAGE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
+          STAGING_UPLOAD_URL: ${{ secrets.STAGING_UPLOAD_URL }}
+        run: bash scripts/build-extension.sh
+
+      - name: Remove temporary data
+        if: always()
+        run: bash scripts/cleanup.sh
+
+  service:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:${{ inputs.build_id }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      SOURCE_DIR: ${{ runner.temp }}/private-source
+    steps:
+      - name: Load controller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Join private network
+        uses: tailscale/github-action@6cae46e2d796f265cfcf628b72a32b4d7cade
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ secrets.TAILSCALE_TAGS }}
+          use-cache: false
+
+      - name: Prepare source
+        env:
+          GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+          SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
+        run: bash scripts/fetch-source.sh
+
+      - name: Authenticate internal registry
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITEA_PACKAGE_TOKEN }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+        run: printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin >/dev/null
+
+      - name: Build and deliver service image
+        run: bash scripts/build-image.sh
+
+      - name: Remove temporary data
+        if: always()
+        run: bash scripts/cleanup.sh
