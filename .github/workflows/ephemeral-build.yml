@@ -44,6 +44,8 @@ jobs:
           [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
           printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
+          tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null
+          curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null
 
       - name: Prepare source
         env:
@@ -90,6 +92,8 @@ jobs:
           [[ "$PRIVATE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$PRIVATE_IP" =~ ^[0-9a-fA-F:.]+$ ]]
           printf '%s %s\n' "$PRIVATE_IP" "$PRIVATE_HOST" | sudo tee -a /etc/hosts >/dev/null
+          tailscale ping --timeout=10s "$PRIVATE_IP" >/dev/null
+          curl --fail --silent --connect-timeout 10 --max-time 20 "https://$PRIVATE_HOST/api/v1/version" >/dev/null
 
       - name: Prepare source
         env:
