@@ -24,7 +24,7 @@ jobs:
       BUILD_ID: ${{ inputs.build_id }}
     steps:
       - name: Load controller
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -75,7 +75,7 @@ jobs:
       REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
     steps:
       - name: Load controller
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -125,7 +125,7 @@ jobs:
       REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
     steps:
       - name: Load controller
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
