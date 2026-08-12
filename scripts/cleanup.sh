@@ -10,6 +10,7 @@ for target in \
   "${RUNNER_TEMP:-}/extension.tar.gz.sha256" \
   "${RUNNER_TEMP:-}/extension-build.log" \
   "${RUNNER_TEMP:-}/image-build.log" \
+  "${RUNNER_TEMP:-}/service-image.tar.zst.enc" \
   "${RUNNER_TEMP:-}/release-response.json" \
   "${RUNNER_TEMP:-}/deploy-input" \
   "${RUNNER_TEMP:-}/deploy-key" \
@@ -20,4 +21,5 @@ for target in \
 done
 
 find "${RUNNER_TEMP:-/tmp}" -maxdepth 1 -name 'source-auth.*' -exec rm -rf {} + 2>/dev/null || true
+unset R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 echo "Ephemeral build data removed"
