@@ -111,6 +111,7 @@ jobs:
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RELAY_ENCRYPTION_KEY: ${{ secrets.RELAY_ENCRYPTION_KEY }}
         run: bash scripts/build-image.sh
 
       - name: Remove temporary data
@@ -167,6 +168,7 @@ jobs:
           N100_SSH_USER: ${{ secrets.N100_SSH_USER }}
           REGISTRY_WRITE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          RELAY_ENCRYPTION_KEY: ${{ secrets.RELAY_ENCRYPTION_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           SERVICE_COMPOSE_NAME: ${{ secrets.SERVICE_COMPOSE_NAME }}

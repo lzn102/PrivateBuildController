@@ -3,6 +3,7 @@ set -euo pipefail
 
 : "${BUILD_ID:?BUILD_ID is required}"
 : "${IMAGE_REF:?IMAGE_REF is required}"
+: "${RELAY_ENCRYPTION_KEY:?RELAY_ENCRYPTION_KEY is required}"
 : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
 : "${R2_BUCKET:?R2_BUCKET is required}"
 : "${R2_ENDPOINT:?R2_ENDPOINT is required}"
@@ -24,7 +25,7 @@ done
 archive="$RUNNER_TEMP/service-image.tar.zst.enc"
 log="$RUNNER_TEMP/image-build.log"
 object_key="relay/${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-1}-$(openssl rand -hex 16).bin"
-relay_passphrase="$(printf '%s' "$R2_SECRET_ACCESS_KEY:$BUILD_ID:$object_key" | sha256sum | cut -d ' ' -f 1)"
+relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$object_key" | sha256sum | cut -d ' ' -f 1)"
 
 if ! docker build --quiet --tag "$IMAGE_REF" "$SOURCE_DIR" >"$log" 2>&1; then
   echo "Image build failed" >&2

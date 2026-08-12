@@ -11,6 +11,7 @@ set -euo pipefail
 : "${REGISTRY_HOST:?REGISTRY_HOST is required}"
 : "${REGISTRY_WRITE_TOKEN:?REGISTRY_WRITE_TOKEN is required}"
 : "${REGISTRY_USERNAME:?REGISTRY_USERNAME is required}"
+: "${RELAY_ENCRYPTION_KEY:?RELAY_ENCRYPTION_KEY is required}"
 : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
 : "${R2_ARCHIVE_SHA256:?R2_ARCHIVE_SHA256 is required}"
 : "${R2_BUCKET:?R2_BUCKET is required}"
@@ -66,7 +67,7 @@ cleanup_relay() {
 }
 trap cleanup_relay EXIT
 relay_url="$(aws s3 presign --endpoint-url "$R2_ENDPOINT" --expires-in 1800 "$relay_uri")"
-relay_passphrase="$(printf '%s' "$R2_SECRET_ACCESS_KEY:$BUILD_ID:$R2_OBJECT_KEY" | sha256sum | cut -d ' ' -f 1)"
+relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$R2_OBJECT_KEY" | sha256sum | cut -d ' ' -f 1)"
 
 tar -C "$SOURCE_DIR" -czf - docker-compose.yml tailscale-serve.json \
   | ssh "${ssh_args[@]}" "$target" \
