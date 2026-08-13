@@ -62,6 +62,14 @@ jobs:
           REQUIRE_BUNDLED_CONFIG: "true"
         run: bash scripts/release-extension.sh
 
+      - name: Show extension build failure
+        if: failure()
+        run: |
+          if [[ -f "$RUNNER_TEMP/extension-build.log" ]]; then
+            echo "Extension build log (secrets are not printed by the build scripts):"
+            tail -200 "$RUNNER_TEMP/extension-build.log"
+          fi
+
       - name: Remove temporary data
         if: always()
         run: bash scripts/cleanup.sh
