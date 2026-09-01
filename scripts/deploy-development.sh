@@ -171,6 +171,9 @@ rollback() {
   rm -rf "$REMOTE_STAGING"
   docker logout "$registry_host" >/dev/null 2>&1 || true
   if test "$status" -ne 0 && test "$deployment_started" = true; then
+    if test -f "$deploy_dir/$compose_file" && test -f "$env_file"; then
+      docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" down >/dev/null 2>&1 || true
+    fi
     while IFS= read -r path; do
       test -z "$path" && continue
       rm -rf "$deploy_dir/$path"
