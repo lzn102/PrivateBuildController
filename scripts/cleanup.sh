@@ -13,6 +13,7 @@ for target in \
   "${RUNNER_TEMP:-}/service-image.tar.zst.enc" \
   "${RUNNER_TEMP:-}/release-response.json" \
   "${RUNNER_TEMP:-}/deploy-input" \
+  "${RUNNER_TEMP:-}/development-deploy-input" \
   "${RUNNER_TEMP:-}/deploy-key" \
   "${RUNNER_TEMP:-}/deploy-known-hosts"; do
   if [[ -n "$target" ]]; then

@@ -1,0 +1,163 @@
+name: Ephemeral development deployment
+run-name: Development ${{ inputs.build_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Exact private source revision
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ephemeral-development
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:dev-${{ inputs.build_id }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+    outputs:
+      archive_sha256: ${{ steps.relay.outputs.archive_sha256 }}
+      object_key: ${{ steps.relay.outputs.object_key }}
+    steps:
+      - name: Load controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Join private network
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ secrets.TAILSCALE_TAGS }}
+          retry: 1
+          timeout: 30s
+          ping: ${{ secrets.PRIVATE_IP }}
+          use-cache: false
+
+      - name: Prepare private endpoint
+        env:
+          PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
+          PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
+        run: bash scripts/prepare-private-endpoint.sh
+
+      - name: Prepare exact source revision
+        env:
+          GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+          SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
+        run: bash scripts/fetch-source.sh
+
+      - name: Build and relay encrypted service image
+        id: relay
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RELAY_ENCRYPTION_KEY: ${{ secrets.RELAY_ENCRYPTION_KEY }}
+        run: bash scripts/build-image.sh
+
+      - name: Remove temporary data
+        if: always()
+        run: bash scripts/cleanup.sh
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:dev-${{ inputs.build_id }}
+      R2_ARCHIVE_SHA256: ${{ needs.build.outputs.archive_sha256 }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      R2_OBJECT_KEY: ${{ needs.build.outputs.object_key }}
+    steps:
+      - name: Load controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Join private network
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ secrets.TAILSCALE_TAGS }}
+          retry: 1
+          timeout: 30s
+          ping: ${{ secrets.PRIVATE_IP }}
+          use-cache: false
+
+      - name: Prepare private endpoint
+        env:
+          PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
+          PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
+        run: bash scripts/prepare-private-endpoint.sh
+
+      - name: Prepare exact source revision
+        env:
+          GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+          SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
+        run: bash scripts/fetch-source.sh
+
+      - name: Deploy and verify development service
+        env:
+          DEPLOY_COMPOSE_FILE: ${{ secrets.DEV_COMPOSE_FILE }}
+          DEPLOY_COMPOSE_PROJECT: ${{ secrets.DEV_COMPOSE_PROJECT }}
+          DEPLOY_BUILD_VARIABLE: ${{ secrets.DEV_BUILD_VARIABLE }}
+          DEPLOY_DATA_DIRECTORIES: ${{ secrets.DEV_DATA_DIRECTORIES }}
+          DEPLOY_DIRECTORY: ${{ secrets.DEV_DEPLOY_DIRECTORY }}
+          DEPLOY_ENV_FILE_B64: ${{ secrets.DEV_ENV_FILE_B64 }}
+          DEPLOY_FILES: ${{ secrets.DEV_DEPLOY_FILES }}
+          DEPLOY_IMAGE_VARIABLE: ${{ secrets.DEV_IMAGE_VARIABLE }}
+          DEPLOY_NETWORK_SERVICE: ${{ secrets.DEV_NETWORK_SERVICE }}
+          DEPLOY_NETWORK_STATE_FILE: ${{ secrets.DEV_NETWORK_STATE_FILE }}
+          DEPLOY_SERVICE_NAME: ${{ secrets.DEV_SERVICE_NAME }}
+          DEPLOY_VERIFY_COMMAND_B64: ${{ secrets.DEV_VERIFY_COMMAND_B64 }}
+          TARGET_SSH_HOST: ${{ secrets.TARGET_SSH_HOST }}
+          TARGET_SSH_KNOWN_HOSTS: ${{ secrets.TARGET_SSH_KNOWN_HOSTS }}
+          TARGET_SSH_PRIVATE_KEY: ${{ secrets.TARGET_SSH_PRIVATE_KEY }}
+          TARGET_SSH_USER: ${{ secrets.TARGET_SSH_USER }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_WRITE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
+          RELAY_ENCRYPTION_KEY: ${{ secrets.RELAY_ENCRYPTION_KEY }}
+          TS_DEVICE_TAG: ${{ secrets.TS_DEVICE_TAG }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          TS_TAILNET: "-"
+        run: bash scripts/deploy-development.sh
+
+      - name: Remove temporary data
+        if: always()
+        run: bash scripts/cleanup.sh
+
+  relay-cleanup:
+    if: always() && needs.build.outputs.object_key != ''
+    needs: [build, deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      R2_OBJECT_KEY: ${{ needs.build.outputs.object_key }}
+    steps:
+      - name: Remove relay object
+        run: >-
+          aws s3 rm --only-show-errors --endpoint-url "$R2_ENDPOINT"
+          "s3://$R2_BUCKET/$R2_OBJECT_KEY"
