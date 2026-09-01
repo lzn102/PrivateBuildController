@@ -57,6 +57,16 @@ jobs:
           SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
         run: bash scripts/fetch-source.sh
 
+      - name: Validate source deployment contract
+        env:
+          VALIDATE_COMMAND_B64: ${{ secrets.DEV_VALIDATE_COMMAND_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$VALIDATE_COMMAND_B64"
+          validate_command="$(printf '%s' "$VALIDATE_COMMAND_B64" | base64 -d)"
+          cd "$RUNNER_TEMP/private-source"
+          bash -euo pipefail -c "$validate_command"
+
       - name: Build and relay encrypted service image
         id: relay
         env:
