@@ -153,9 +153,67 @@ jobs:
         if: always()
         run: bash scripts/cleanup.sh
 
+  extension:
+    needs: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+    steps:
+      - name: Load controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Join private network
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ secrets.TAILSCALE_TAGS }}
+          retry: 1
+          timeout: 30s
+          ping: ${{ secrets.PRIVATE_IP }}
+          use-cache: false
+
+      - name: Prepare private endpoint
+        env:
+          PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
+          PRIVATE_IP: ${{ secrets.PRIVATE_IP }}
+        run: bash scripts/prepare-private-endpoint.sh
+
+      - name: Prepare exact source revision
+        env:
+          GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+          SOURCE_REPO_URL: ${{ secrets.SOURCE_REPO_URL }}
+        run: bash scripts/fetch-source.sh
+
+      - name: Package and publish development extension
+        env:
+          BUNDLED_API_TOKEN: ${{ secrets.BUNDLED_API_TOKEN }}
+          BUNDLED_COLLECTION_ID: ${{ secrets.BUNDLED_COLLECTION_ID }}
+          BUNDLED_ORGANIZATION_ID: ${{ secrets.BUNDLED_ORGANIZATION_ID }}
+          BUNDLED_PROXY_URLS: ${{ secrets.BUNDLED_PROXY_URLS }}
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
+          REPOSITORY_API_URL: ${{ secrets.REPOSITORY_API_URL }}
+          REQUIRE_BUNDLED_CONFIG: "true"
+        run: bash scripts/release-development-extension.sh
+
+      - name: Show extension build failure
+        if: failure()
+        run: |
+          if [[ -f "$RUNNER_TEMP/extension-build.log" ]]; then
+            echo "Extension build log (secrets are not printed by the build scripts):"
+            tail -200 "$RUNNER_TEMP/extension-build.log"
+          fi
+
+      - name: Remove temporary data
+        if: always()
+        run: bash scripts/cleanup.sh
+
   relay-cleanup:
     if: always() && needs.build.outputs.object_key != ''
-    needs: [build, deploy]
+    needs: [build, deploy, extension]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
