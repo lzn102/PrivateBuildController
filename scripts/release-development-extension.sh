@@ -52,6 +52,22 @@ const valid = bundledDefaults.apiToken === process.env.BUNDLED_API_TOKEN
 if (!valid) throw new Error("Development extension bundled configuration does not match its isolated environment");
 NODE
 
+extension_directory="$RUNNER_TEMP/development-extension"
+rm -rf "$extension_directory"
+mkdir -p "$extension_directory"
+unzip -q "$asset" -d "$extension_directory"
+proxy_url="$(printf '%s' "$BUNDLED_PROXY_URLS" | tr ',\r' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed -e '/^$/d' | head -1)"
+[[ "$proxy_url" == https://* ]] || { echo "Development proxy URL is invalid" >&2; exit 1; }
+(
+  cd "$SOURCE_DIR"
+  timeout 10m npx --no-install playwright install --with-deps chromium
+  PASSKEYEXT_E2E_API_TOKEN="$BUNDLED_API_TOKEN" \
+    PASSKEYEXT_E2E_EXTENSION_DIRECTORY="$extension_directory" \
+    PASSKEYEXT_E2E_PROXY_URL="$proxy_url" \
+    PASSKEYEXT_E2E_SITE_URL="${proxy_url%/}/__passkeyext-test/" \
+    timeout 8m node scripts/development-browser-e2e.mjs
+)
+
 request() {
   local method="$1" path="$2" output="$3"
   shift 3

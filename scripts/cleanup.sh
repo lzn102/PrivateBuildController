@@ -14,6 +14,7 @@ for target in \
   "${RUNNER_TEMP:-}/release-response.json" \
   "${RUNNER_TEMP:-}/deploy-input" \
   "${RUNNER_TEMP:-}/development-deploy-input" \
+  "${RUNNER_TEMP:-}/development-extension" \
   "${RUNNER_TEMP:-}/development-extension.zip" \
   "${RUNNER_TEMP:-}/deploy-key" \
   "${RUNNER_TEMP:-}/deploy-known-hosts"; do
