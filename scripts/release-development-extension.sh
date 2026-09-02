@@ -61,7 +61,8 @@ proxy_url="$(printf '%s' "$BUNDLED_PROXY_URLS" | tr ',\r' '\n' | sed -e 's/^[[:s
 (
   cd "$SOURCE_DIR"
   timeout 10m npx --no-install playwright install --with-deps chromium
-  PASSKEYEXT_E2E_API_TOKEN="$BUNDLED_API_TOKEN" \
+  PASSKEYEXT_BUILD_ID="$BUILD_ID" \
+    PASSKEYEXT_E2E_API_TOKEN="$BUNDLED_API_TOKEN" \
     PASSKEYEXT_E2E_EXTENSION_DIRECTORY="$extension_directory" \
     PASSKEYEXT_E2E_PROXY_URL="$proxy_url" \
     PASSKEYEXT_E2E_SITE_URL="${proxy_url%/}/__passkeyext-test/" \
