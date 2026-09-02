@@ -12,6 +12,7 @@ response="$RUNNER_TEMP/release-response.json"
 
 if ! (
   cd "$SOURCE_DIR"
+  export PASSKEYEXT_BUILD_ID="$BUILD_ID"
   npm ci --no-audit --no-fund --silent
   npm run package --silent
 ) >"$log" 2>&1; then
