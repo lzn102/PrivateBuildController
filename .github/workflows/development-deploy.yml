@@ -190,10 +190,10 @@ jobs:
 
       - name: Package and publish development extension
         env:
-          BUNDLED_API_TOKEN: ${{ secrets.BUNDLED_API_TOKEN }}
-          BUNDLED_COLLECTION_ID: ${{ secrets.BUNDLED_COLLECTION_ID }}
-          BUNDLED_ORGANIZATION_ID: ${{ secrets.BUNDLED_ORGANIZATION_ID }}
-          BUNDLED_PROXY_URLS: ${{ secrets.BUNDLED_PROXY_URLS }}
+          BUNDLED_API_TOKEN: ${{ secrets.DEV_API_TOKEN }}
+          BUNDLED_COLLECTION_ID: ""
+          BUNDLED_ORGANIZATION_ID: ""
+          BUNDLED_PROXY_URLS: ${{ secrets.DEV_PROXY_URLS }}
           GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
           REPOSITORY_API_URL: ${{ secrets.REPOSITORY_API_URL }}
           REQUIRE_BUNDLED_CONFIG: "true"

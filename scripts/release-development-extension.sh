@@ -35,6 +35,22 @@ unzip -p "$asset" manifest.json | jq -e --arg build_id "$BUILD_ID" \
     echo "Development extension build metadata is missing" >&2
     exit 1
   }
+bundled_config="$RUNNER_TEMP/development-bundled-config.mjs"
+unzip -p "$asset" src/shared/bundled-config.js > "$bundled_config"
+BUNDLED_CONFIG_PATH="$bundled_config" node --input-type=module <<'NODE'
+import { pathToFileURL } from "node:url";
+
+const { bundledDefaults } = await import(pathToFileURL(process.env.BUNDLED_CONFIG_PATH));
+const expectedUrls = String(process.env.BUNDLED_PROXY_URLS || "")
+  .split(/[\r\n,]+/u)
+  .map((value) => value.trim().replace(/\/+$/u, ""))
+  .filter(Boolean);
+const valid = bundledDefaults.apiToken === process.env.BUNDLED_API_TOKEN
+  && bundledDefaults.defaultCollectionId === ""
+  && bundledDefaults.defaultOrganizationId === ""
+  && JSON.stringify(bundledDefaults.proxyUrls) === JSON.stringify(expectedUrls);
+if (!valid) throw new Error("Development extension bundled configuration does not match its isolated environment");
+NODE
 
 request() {
   local method="$1" path="$2" output="$3"
