@@ -172,6 +172,17 @@ rollback() {
   docker logout "$registry_host" >/dev/null 2>&1 || true
   if test "$status" -ne 0 && test "$deployment_started" = true; then
     if test -f "$deploy_dir/$compose_file" && test -f "$env_file"; then
+      echo "Deployment failed; collecting configured service diagnostics before rollback." >&2
+      docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" ps --all >&2 || true
+      while IFS= read -r container_id; do
+        test -z "$container_id" && continue
+        diagnostic="$(docker inspect --format '{{ index .Config.Labels "io.private-build-controller.diagnostics" }}' "$container_id" 2>/dev/null || true)"
+        test "$diagnostic" = true || continue
+        service="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.service" }}' "$container_id" 2>/dev/null || true)"
+        [[ "$service" =~ ^[A-Za-z0-9._-]+$ ]] || continue
+        echo "Diagnostic logs for service: $service" >&2
+        docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" logs --no-color --tail 120 "$service" >&2 || true
+      done < <(docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" ps -aq)
       docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" down >/dev/null 2>&1 || true
     fi
     while IFS= read -r path; do
