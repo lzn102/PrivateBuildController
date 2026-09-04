@@ -3,6 +3,7 @@ set -euo pipefail
 
 : "${BUILD_ID:?BUILD_ID is required}"
 : "${GITEA_RELEASE_TOKEN:?GITEA_RELEASE_TOKEN is required}"
+: "${PASSKEYEXT_E2E_ADMIN_BOOTSTRAP_TOKEN:?PASSKEYEXT_E2E_ADMIN_BOOTSTRAP_TOKEN is required}"
 : "${REPOSITORY_API_URL:?REPOSITORY_API_URL is required}"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"

@@ -195,6 +195,7 @@ jobs:
           BUNDLED_ORGANIZATION_ID: ""
           BUNDLED_PROXY_URLS: ${{ secrets.DEV_PROXY_URLS }}
           GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
+          PASSKEYEXT_E2E_ADMIN_BOOTSTRAP_TOKEN: ${{ secrets.DEV_ADMIN_BOOTSTRAP_TOKEN }}
           REPOSITORY_API_URL: ${{ secrets.REPOSITORY_API_URL }}
           REQUIRE_BUNDLED_CONFIG: "true"
         run: bash scripts/release-development-extension.sh
