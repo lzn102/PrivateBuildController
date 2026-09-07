@@ -165,6 +165,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
       - name: Join private network
         uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
         with:
