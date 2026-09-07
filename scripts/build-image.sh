@@ -27,8 +27,19 @@ log="$RUNNER_TEMP/image-build.log"
 object_key="relay/${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-1}-$(openssl rand -hex 16).bin"
 relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$object_key" | sha256sum | cut -d ' ' -f 1)"
 
-if ! docker build --quiet --tag "$IMAGE_REF" "$SOURCE_DIR" >"$log" 2>&1; then
-  echo "Image build failed" >&2
+build_succeeded=false
+for attempt in 1 2 3; do
+  if docker build --quiet --tag "$IMAGE_REF" "$SOURCE_DIR" >"$log" 2>&1; then
+    build_succeeded=true
+    break
+  fi
+  if (( attempt < 3 )); then
+    echo "Image build attempt $attempt failed; retrying" >&2
+    sleep $((attempt * 10))
+  fi
+done
+if [[ "$build_succeeded" != true ]]; then
+  echo "Image build failed after 3 attempts" >&2
   exit 1
 fi
 
