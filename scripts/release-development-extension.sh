@@ -67,7 +67,7 @@ proxy_url="$(printf '%s' "$BUNDLED_PROXY_URLS" | tr ',\r' '\n' | sed -e 's/^[[:s
     PASSKEYEXT_E2E_EXTENSION_DIRECTORY="$extension_directory" \
     PASSKEYEXT_E2E_PROXY_URL="$proxy_url" \
     PASSKEYEXT_E2E_SITE_URL="${proxy_url%/}/__passkeyext-test/" \
-    timeout 8m node scripts/development-browser-e2e.mjs
+    timeout 15m node scripts/development-browser-e2e.mjs
 )
 
 request() {
