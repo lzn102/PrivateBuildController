@@ -23,7 +23,10 @@ fi
 version="$(node -p "require('$SOURCE_DIR/package.json').version")"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]
 tag="v$version"
-mapfile -t assets < <(find "$SOURCE_DIR/packages" -maxdepth 1 -type f -name '*.zip' -print)
+assets=()
+while IFS= read -r asset; do
+  test -z "$asset" || assets+=("$asset")
+done < <(find "$SOURCE_DIR/packages" -maxdepth 1 -type f -name '*.zip' -print)
 [[ "${#assets[@]}" = 1 ]]
 asset="${assets[0]}"
 asset_name="$(basename "$asset")"

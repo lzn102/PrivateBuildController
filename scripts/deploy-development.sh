@@ -7,7 +7,7 @@ required=(
   DEPLOY_NETWORK_SERVICE DEPLOY_NETWORK_STATE_FILE DEPLOY_SERVICE_NAME IMAGE_REF
   R2_ACCESS_KEY_ID R2_ARCHIVE_SHA256 R2_BUCKET R2_ENDPOINT R2_OBJECT_KEY
   R2_SECRET_ACCESS_KEY REGISTRY_HOST REGISTRY_USERNAME REGISTRY_WRITE_TOKEN
-  RELAY_ENCRYPTION_KEY RUNNER_TEMP TARGET_SSH_HOST TARGET_SSH_KNOWN_HOSTS
+  GITHUB_OUTPUT RELAY_ENCRYPTION_KEY RUNNER_TEMP TARGET_SSH_HOST TARGET_SSH_KNOWN_HOSTS
   TARGET_SSH_PRIVATE_KEY TARGET_SSH_USER
 )
 for name in "${required[@]}"; do
@@ -15,10 +15,16 @@ for name in "${required[@]}"; do
 done
 SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
+for command_name in aws base64 node scp sha256sum ssh tar; do
+  command -v "$command_name" >/dev/null || {
+    echo "Required command is unavailable: $command_name" >&2
+    exit 1
+  }
+done
+
 [[ "$BUILD_ID" =~ ^[0-9a-f]{40}$ ]]
 [[ "$DEPLOY_BUILD_VARIABLE" =~ ^[A-Z][A-Z0-9_]*$ ]]
 [[ "$DEPLOY_COMPOSE_PROJECT" =~ ^[A-Za-z0-9._-]+$ ]]
-[[ "$DEPLOY_DIRECTORY" =~ ^[A-Za-z0-9._/-]+$ && "$DEPLOY_DIRECTORY" != /* && "$DEPLOY_DIRECTORY" != *..* ]]
 [[ "$DEPLOY_IMAGE_VARIABLE" =~ ^[A-Z][A-Z0-9_]*$ ]]
 [[ "$DEPLOY_NETWORK_SERVICE" =~ ^[A-Za-z0-9._-]+$ ]]
 [[ "$DEPLOY_SERVICE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
@@ -34,8 +40,13 @@ SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
 validate_relative_path() {
   local value="$1"
-  [[ "$value" =~ ^[A-Za-z0-9._/-]+$ && "$value" != /* && "$value" != *..* ]]
+  [[ "$value" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+  [[ "$value" != /* && "$value" != -* && "$value" != */ ]] || return 1
+  case "/$value/" in
+    *//*|*/./*|*/../*) return 1 ;;
+  esac
 }
+validate_relative_path "$DEPLOY_DIRECTORY"
 validate_relative_path "$DEPLOY_COMPOSE_FILE"
 validate_relative_path "$DEPLOY_NETWORK_STATE_FILE"
 
@@ -57,11 +68,20 @@ done <<< "$DEPLOY_DATA_DIRECTORIES"
 key_file="$RUNNER_TEMP/deploy-key"
 known_hosts="$RUNNER_TEMP/deploy-known-hosts"
 payload="$RUNNER_TEMP/development-deploy-input"
+remote_staging="/tmp/development-source-$BUILD_ID"
+remote_payload="/tmp/development-deploy-$BUILD_ID"
 printf '%s\n' "$TARGET_SSH_PRIVATE_KEY" > "$key_file"
 printf '%s\n' "$TARGET_SSH_KNOWN_HOSTS" > "$known_hosts"
 chmod 600 "$key_file" "$known_hosts"
-ssh_args=(-i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+ssh_args=(
+  -i "$key_file" -o BatchMode=yes -o ConnectTimeout=10
+  -o ServerAliveCountMax=3 -o ServerAliveInterval=15
+  -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts"
+)
 target="$TARGET_SSH_USER@$TARGET_SSH_HOST"
+transaction_id="${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-1}-${BUILD_ID:0:12}"
+[[ "$transaction_id" =~ ^[A-Za-z0-9._-]+$ ]]
+printf 'transaction_id=%s\n' "$transaction_id" >> "$GITHUB_OUTPUT"
 ssh "${ssh_args[@]}" "$target" true
 
 export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
@@ -70,16 +90,18 @@ export AWS_DEFAULT_REGION=auto
 export AWS_EC2_METADATA_DISABLED=true
 relay_uri="s3://$R2_BUCKET/$R2_OBJECT_KEY"
 cleanup() {
-  aws s3 rm --only-show-errors --endpoint-url "$R2_ENDPOINT" "$relay_uri" >/dev/null 2>&1 || true
+  set +e
+  aws s3 rm --only-show-errors --endpoint-url "$R2_ENDPOINT" "$relay_uri" >/dev/null 2>&1
+  ssh "${ssh_args[@]}" "$target" \
+    "rm -f '$remote_payload'; rm -rf '$remote_staging'" >/dev/null 2>&1
   rm -f "$payload"
   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 }
-trap cleanup EXIT
+trap 'status=$?; trap - EXIT; cleanup; exit "$status"' EXIT
 relay_url="$(aws s3 presign --endpoint-url "$R2_ENDPOINT" --expires-in 1800 "$relay_uri")"
 relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$R2_OBJECT_KEY" | sha256sum | cut -d ' ' -f 1)"
 
-remote_staging="/tmp/development-source-$BUILD_ID"
-tar -C "$SOURCE_DIR" -czf - "${deploy_files[@]}" \
+tar -C "$SOURCE_DIR" -czf - -- "${deploy_files[@]}" \
   | ssh "${ssh_args[@]}" "$target" \
       "set -eu; rm -rf '$remote_staging'; install -d -m 0700 '$remote_staging'; tar -xzf - -C '$remote_staging'"
 
@@ -94,22 +116,24 @@ values=(
   "$auth_key" "$relay_url" "$relay_passphrase" "$R2_ARCHIVE_SHA256"
   "$DEPLOY_ENV_FILE_B64" "$DEPLOY_COMPOSE_FILE" "$DEPLOY_COMPOSE_PROJECT"
   "$DEPLOY_SERVICE_NAME" "$DEPLOY_NETWORK_SERVICE" "$DEPLOY_NETWORK_STATE_FILE"
-  "$DEPLOY_IMAGE_VARIABLE" "$DEPLOY_BUILD_VARIABLE" "${DEPLOY_VERIFY_COMMAND_B64:-}"
-  "$DEPLOY_DATA_DIRECTORIES" "$(printf '%s\n' "${deploy_files[@]}")" "$BUILD_ID"
+  "$DEPLOY_IMAGE_VARIABLE" "$DEPLOY_BUILD_VARIABLE" "$DEPLOY_DATA_DIRECTORIES"
+  "$(printf '%s\n' "${deploy_files[@]}")" "$BUILD_ID" "$transaction_id"
 )
 for value in "${values[@]}"; do
   encode "$value"
   printf '\n'
 done > "$payload"
 chmod 600 "$payload"
-remote_payload="/tmp/development-deploy-$BUILD_ID"
 scp "${ssh_args[@]}" "$payload" "$target:$remote_payload"
 
 ssh "${ssh_args[@]}" "$target" \
   "DEPLOY_DIRECTORY='$DEPLOY_DIRECTORY' REMOTE_PAYLOAD='$remote_payload' REMOTE_STAGING='$remote_staging' bash -s" <<'REMOTE'
 set -euo pipefail
 decode() { printf '%s' "$1" | base64 -d; }
-mapfile -t lines < "$REMOTE_PAYLOAD"
+lines=()
+while IFS= read -r line || test -n "$line"; do
+  lines+=("$line")
+done < "$REMOTE_PAYLOAD"
 registry_token="$(decode "${lines[0]}")"
 registry_host="$(decode "${lines[1]}")"
 registry_user="$(decode "${lines[2]}")"
@@ -126,99 +150,131 @@ network_service="$(decode "${lines[12]}")"
 network_state_file="$(decode "${lines[13]}")"
 image_variable="$(decode "${lines[14]}")"
 build_variable="$(decode "${lines[15]}")"
-verify_command_b64="$(decode "${lines[16]}")"
-data_directories="$(decode "${lines[17]}")"
-deploy_files="$(decode "${lines[18]}")"
-build_id="$(decode "${lines[19]}")"
+data_directories="$(decode "${lines[16]}")"
+deploy_files="$(decode "${lines[17]}")"
+build_id="$(decode "${lines[18]}")"
+transaction_id="$(decode "${lines[19]}")"
+
+for command_name in base64 curl docker install ln openssl sed sha256sum timeout zstd; do
+  command -v "$command_name" >/dev/null || {
+    echo "Required remote command is unavailable: $command_name" >&2
+    exit 1
+  }
+done
+docker compose version >/dev/null
 
 deploy_dir="$HOME/$DEPLOY_DIRECTORY"
 env_file="$deploy_dir/.env"
-backup_dir="/tmp/development-backup-$build_id"
+state_root="$HOME/.development-deploy-transactions"
+state_dir="$state_root/$transaction_id"
+active_pointer="$state_root/active"
 archive="/tmp/development-image-$RANDOM.enc"
 image_tar="/tmp/development-image-$RANDOM.tar"
-old_image=""
-had_env=false
-deployment_started=false
 
-install -d -m 0700 "$deploy_dir" "$backup_dir"
-while IFS= read -r path; do
-  test -z "$path" && continue
-  install -d -m 0700 "$deploy_dir/$path"
-done <<< "$data_directories"
+cleanup_remote() {
+  status=$?
+  rm -f "$REMOTE_PAYLOAD" "$archive" "$image_tar"
+  rm -rf "$REMOTE_STAGING"
+  if test -d "$state_dir" && \
+      { ! test -f "$active_pointer" || test "$(cat "$active_pointer")" != "$transaction_id"; }; then
+    rm -rf "$state_dir"
+  fi
+  docker logout "$registry_host" >/dev/null 2>&1 || true
+  exit "$status"
+}
+trap cleanup_remote EXIT
+
+test ! -e "$state_dir"
+install -d -m 0700 "$state_root" "$state_dir" "$state_dir/files"
+chmod 0700 "$state_root"
+test ! -e "$deploy_dir" || test -d "$deploy_dir"
+if test -d "$deploy_dir"; then
+  touch "$state_dir/had-deploy-directory"
+fi
 
 if test -f "$env_file"; then
-  cp -p "$env_file" "$backup_dir/env"
-  had_env=true
+  cp -p "$env_file" "$state_dir/env"
+  touch "$state_dir/had-env"
 fi
+printf '%s\n' "$deploy_files" > "$state_dir/files-list"
+chmod 0600 "$state_dir/files-list"
 while IFS= read -r path; do
   test -z "$path" && continue
   if test -e "$deploy_dir/$path"; then
-    install -d "$backup_dir/files/$(dirname "$path")"
-    cp -a "$deploy_dir/$path" "$backup_dir/files/$path"
+    install -d "$state_dir/files/$(dirname "$path")"
+    cp -a "$deploy_dir/$path" "$state_dir/files/$path"
   fi
 done <<< "$deploy_files"
 
 if test -f "$deploy_dir/$compose_file" && test -f "$env_file"; then
+  if ! docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" config --images \
+      > "$state_dir/compose-images" 2>/dev/null; then
+    echo "Previous Compose state is invalid" >&2
+    exit 1
+  fi
+  while IFS= read -r previous_image; do
+    test -z "$previous_image" && continue
+    docker image inspect "$previous_image" >/dev/null
+  done < "$state_dir/compose-images"
   old_service_id="$(docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" ps -q "$service_name" 2>/dev/null || true)"
   if test -n "$old_service_id"; then
-    old_image="$(docker inspect --format '{{.Config.Image}}' "$old_service_id")"
+    docker inspect --format '{{.Image}}' "$old_service_id" > "$state_dir/service-image-id"
+    docker inspect --format '{{.Config.Image}}' "$old_service_id" > "$state_dir/service-image-ref"
+    docker image inspect "$(cat "$state_dir/service-image-id")" >/dev/null
+    touch "$state_dir/had-service"
   fi
 fi
 
-rollback() {
-  status=$?
-  rm -f "$REMOTE_PAYLOAD" "$archive" "$image_tar"
-  rm -rf "$REMOTE_STAGING"
-  docker logout "$registry_host" >/dev/null 2>&1 || true
-  if test "$status" -ne 0 && test "$deployment_started" = true; then
-    if test -f "$deploy_dir/$compose_file" && test -f "$env_file"; then
-      echo "Deployment failed; collecting configured service diagnostics before rollback." >&2
-      docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" ps --all >&2 || true
-      while IFS= read -r container_id; do
-        test -z "$container_id" && continue
-        diagnostic="$(docker inspect --format '{{ index .Config.Labels "io.private-build-controller.diagnostics" }}' "$container_id" 2>/dev/null || true)"
-        test "$diagnostic" = true || continue
-        service="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.service" }}' "$container_id" 2>/dev/null || true)"
-        [[ "$service" =~ ^[A-Za-z0-9._-]+$ ]] || continue
-        echo "Diagnostic logs for service: $service" >&2
-        docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" logs --no-color --tail 120 "$service" >&2 || true
-      done < <(docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" ps -aq)
-      docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" down >/dev/null 2>&1 || true
-    fi
-    while IFS= read -r path; do
-      test -z "$path" && continue
-      rm -rf "$deploy_dir/$path"
-      if test -e "$backup_dir/files/$path"; then
-        install -d "$deploy_dir/$(dirname "$path")"
-        cp -a "$backup_dir/files/$path" "$deploy_dir/$path"
-      fi
-    done <<< "$deploy_files"
-    if test "$had_env" = true; then
-      cp -p "$backup_dir/env" "$env_file"
-    else
-      rm -f "$env_file"
-    fi
-    if test -n "$old_image" && test -f "$deploy_dir/$compose_file" && test -f "$env_file"; then
-      docker compose -p "$compose_project" -f "$deploy_dir/$compose_file" --env-file "$env_file" up -d --pull never --remove-orphans >/dev/null 2>&1 || true
-    fi
+printf '%s' "$DEPLOY_DIRECTORY" > "$state_dir/deploy-directory"
+printf '%s' "$compose_file" > "$state_dir/compose-file"
+printf '%s' "$compose_project" > "$state_dir/compose-project"
+printf '%s' "$service_name" > "$state_dir/service-name"
+printf '%s' "$network_service" > "$state_dir/network-service"
+while IFS= read -r path; do
+  test -z "$path" && continue
+  if ! test -e "$deploy_dir/$path"; then
+    printf '%s\n' "$path" >> "$state_dir/created-data-directories"
   fi
-  rm -rf "$backup_dir"
-  exit "$status"
-}
-trap rollback EXIT
+done <<< "$data_directories"
+touch "$state_dir/ready"
+chmod -R go-rwx "$state_dir"
 
-curl --fail --silent --show-error --location --retry 3 --output "$archive" "$relay_url"
+# Publish a fully written transaction handle before any live deployment mutation.
+printf '%s\n' "$transaction_id" > "$state_dir/active-pointer"
+chmod 0600 "$state_dir/active-pointer"
+if ! ln "$state_dir/active-pointer" "$active_pointer"; then
+  echo "Another development deployment transaction is active" >&2
+  exit 1
+fi
+
+curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+  --connect-timeout 10 --max-time 180 --output "$archive" "$relay_url"
 printf '%s  %s\n' "$relay_sha256" "$archive" | sha256sum -c - >/dev/null
 export relay_passphrase
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:relay_passphrase -in "$archive" \
   | zstd -d --quiet -o "$image_tar"
 unset relay_passphrase
 docker load --input "$image_tar" >/dev/null
-docker image inspect "$image_ref" >/dev/null
-printf '%s' "$registry_token" | docker login "$registry_host" --username "$registry_user" --password-stdin >/dev/null
-docker push "$image_ref" >/dev/null
+if ! docker image inspect "$image_ref" >/dev/null 2>&1; then
+  echo "Loaded image verification failed" >&2
+  exit 1
+fi
+if ! printf '%s' "$registry_token" | docker login "$registry_host" --username "$registry_user" --password-stdin >/dev/null 2>&1; then
+  echo "Registry authentication failed" >&2
+  exit 1
+fi
+if ! timeout --signal=TERM --kill-after=30s 10m docker push "$image_ref" >/dev/null 2>&1; then
+  echo "Image publication failed" >&2
+  exit 1
+fi
 
-deployment_started=true
+touch "$state_dir/deployment-started"
+install -d -m 0700 "$deploy_dir"
+while IFS= read -r path; do
+  test -z "$path" && continue
+  install -d -m 0700 "$deploy_dir/$path"
+done <<< "$data_directories"
+
 while IFS= read -r path; do
   test -z "$path" && continue
   install -d "$deploy_dir/$(dirname "$path")"
@@ -235,28 +291,18 @@ fi
 chmod 0600 "$env_file"
 
 cd "$deploy_dir"
-docker compose -p "$compose_project" -f "$compose_file" --env-file .env up -d --pull never --remove-orphans
-service_id="$(docker compose -p "$compose_project" -f "$compose_file" --env-file .env ps -q "$service_name")"
-network_id="$(docker compose -p "$compose_project" -f "$compose_file" --env-file .env ps -q "$network_service")"
-test -n "$service_id" && test -n "$network_id"
-
-attempt=0
-until docker exec "$network_id" tailscale status --json | grep -q '"Online": true'; do
-  attempt=$((attempt + 1)); test "$attempt" -lt 45; sleep 2
-done
-attempt=0
-until test "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$service_id")" = healthy; do
-  attempt=$((attempt + 1)); test "$attempt" -lt 60; sleep 2
-done
-if test -n "$verify_command_b64"; then
-  verify_command="$(printf '%s' "$verify_command_b64" | base64 -d)"
-  docker exec "$service_id" sh -lc "$verify_command"
+if ! timeout --signal=TERM --kill-after=30s 5m \
+    docker compose -p "$compose_project" -f "$compose_file" --env-file .env \
+    up -d --pull never --remove-orphans >/dev/null 2>&1; then
+  echo "Compose deployment failed" >&2
+  exit 1
 fi
+service_id="$(docker compose -p "$compose_project" -f "$compose_file" --env-file .env ps -q "$service_name" 2>/dev/null)"
+network_id="$(docker compose -p "$compose_project" -f "$compose_file" --env-file .env ps -q "$network_service" 2>/dev/null)"
+test -n "$service_id" && test -n "$network_id"
 
 sed -i '/^TS_AUTHKEY=/d' "$env_file"
 chmod 0600 "$env_file"
-trap - EXIT
-rollback
 REMOTE
 
-echo "Development service deployment verified"
+echo "Development service deployed; transaction retained for verification"
