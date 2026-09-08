@@ -98,7 +98,7 @@ cleanup() {
   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 }
 trap 'status=$?; trap - EXIT; cleanup; exit "$status"' EXIT
-relay_url="$(aws s3 presign --endpoint-url "$R2_ENDPOINT" --expires-in 1800 "$relay_uri")"
+relay_url="$(aws s3 presign --endpoint-url "$R2_ENDPOINT" --expires-in 3600 "$relay_uri")"
 relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$R2_OBJECT_KEY" | sha256sum | cut -d ' ' -f 1)"
 
 tar -C "$SOURCE_DIR" -czf - -- "${deploy_files[@]}" \
@@ -155,7 +155,7 @@ deploy_files="$(decode "${lines[17]}")"
 build_id="$(decode "${lines[18]}")"
 transaction_id="$(decode "${lines[19]}")"
 
-for command_name in base64 curl docker install ln openssl sed sha256sum timeout zstd; do
+for command_name in base64 curl docker install ln openssl sed sha256sum sleep timeout zstd; do
   command -v "$command_name" >/dev/null || {
     echo "Required remote command is unavailable: $command_name" >&2
     exit 1
@@ -247,8 +247,24 @@ if ! ln "$state_dir/active-pointer" "$active_pointer"; then
   exit 1
 fi
 
-curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
-  --connect-timeout 10 --max-time 180 --output "$archive" "$relay_url"
+relay_downloaded=false
+for attempt in 1 2 3 4 5 6; do
+  if curl --fail --silent --show-error --location --continue-at - \
+      --connect-timeout 10 --max-time 300 --output "$archive" "$relay_url"; then
+    relay_downloaded=true
+    break
+  fi
+  if test -s "$archive" && \
+      printf '%s  %s\n' "$relay_sha256" "$archive" | sha256sum -c - >/dev/null 2>&1; then
+    relay_downloaded=true
+    break
+  fi
+  test "$attempt" -eq 6 || sleep $((attempt * 2))
+done
+if test "$relay_downloaded" != true; then
+  echo "Relay download failed after resumable attempts" >&2
+  exit 1
+fi
 printf '%s  %s\n' "$relay_sha256" "$archive" | sha256sum -c - >/dev/null
 export relay_passphrase
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:relay_passphrase -in "$archive" \
