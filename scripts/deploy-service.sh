@@ -4,10 +4,10 @@ set -euo pipefail
 : "${BUILD_ID:?BUILD_ID is required}"
 : "${DEPLOY_DIRECTORY:?DEPLOY_DIRECTORY is required}"
 : "${IMAGE_REF:?IMAGE_REF is required}"
-: "${N100_SSH_HOST:?N100_SSH_HOST is required}"
-: "${N100_SSH_KNOWN_HOSTS:?N100_SSH_KNOWN_HOSTS is required}"
-: "${N100_SSH_PRIVATE_KEY:?N100_SSH_PRIVATE_KEY is required}"
-: "${N100_SSH_USER:?N100_SSH_USER is required}"
+: "${TARGET_SSH_HOST:?TARGET_SSH_HOST is required}"
+: "${TARGET_SSH_KNOWN_HOSTS:?TARGET_SSH_KNOWN_HOSTS is required}"
+: "${TARGET_SSH_PRIVATE_KEY:?TARGET_SSH_PRIVATE_KEY is required}"
+: "${TARGET_SSH_USER:?TARGET_SSH_USER is required}"
 : "${REGISTRY_HOST:?REGISTRY_HOST is required}"
 : "${REGISTRY_WRITE_TOKEN:?REGISTRY_WRITE_TOKEN is required}"
 : "${REGISTRY_USERNAME:?REGISTRY_USERNAME is required}"
@@ -28,8 +28,8 @@ SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 [[ "$DEPLOY_DIRECTORY" =~ ^[A-Za-z0-9._/-]+$ ]]
 [[ "$DEPLOY_DIRECTORY" != /* && "$DEPLOY_DIRECTORY" != *..* ]]
 [[ "$IMAGE_REF" =~ ^[A-Za-z0-9._:/-]+$ ]]
-[[ "$N100_SSH_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
-[[ "$N100_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+[[ "$TARGET_SSH_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
+[[ "$TARGET_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
 [[ "$REGISTRY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
 [[ "$REGISTRY_USERNAME" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
 [[ "$R2_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
@@ -42,12 +42,12 @@ SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
 key_file="$RUNNER_TEMP/deploy-key"
 known_hosts="$RUNNER_TEMP/deploy-known-hosts"
-printf '%s\n' "$N100_SSH_PRIVATE_KEY" > "$key_file"
-printf '%s\n' "$N100_SSH_KNOWN_HOSTS" > "$known_hosts"
+printf '%s\n' "$TARGET_SSH_PRIVATE_KEY" > "$key_file"
+printf '%s\n' "$TARGET_SSH_KNOWN_HOSTS" > "$known_hosts"
 chmod 600 "$key_file" "$known_hosts"
 
 ssh_args=(-i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
-target="$N100_SSH_USER@$N100_SSH_HOST"
+target="$TARGET_SSH_USER@$TARGET_SSH_HOST"
 ssh "${ssh_args[@]}" "$target" true
 
 for command_name in aws openssl sha256sum; do
