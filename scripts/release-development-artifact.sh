@@ -67,6 +67,21 @@ e2e_command="$(decode_command "$ARTIFACT_E2E_COMMAND_B64" E2E)"
 if ! (cd "$SOURCE_DIR" && timeout --signal=TERM --kill-after=30s 20m \
     bash -euo pipefail -c "$e2e_command") >>"$log" 2>&1; then
   echo "Development E2E failed" >&2
+  grep -E '^\[PassKeyExt E2E (scenario|error|cleanup)\]' "$log" >&2 || true
+  evidence_line="$(grep -E '^\{.*\}$' "$log" | tail -1 || true)"
+  if test -n "$evidence_line" && jq -e \
+      --arg build_id "$BUILD_ID" \
+      '.buildId == $build_id and (.ok | type == "boolean") and (.scenarios | type == "array")' \
+      >/dev/null 2>&1 <<< "$evidence_line"; then
+    jq -c '{buildId,ok,failure:(.failure | if type == "object" then {code,name,stage} else null end),
+      scenarios:[.scenarios[] | {label,ok,error:(.error | if type == "object" then {code,name} else null end)}],
+      cleanup:{profileRemoved:.cleanup.profileRemoved,testSiteAccountsRemoved:.cleanup.testSiteAccountsRemoved,
+        controlPlane:{residualActiveSessions:.cleanup.controlPlane.residualActiveSessions,
+          residualClients:.cleanup.controlPlane.residualClients,residualPolicies:.cleanup.controlPlane.residualPolicies},
+        extensionCache:{cleared:.cleanup.extensionCache.cleared},
+        vault:{residualActiveItems:.cleanup.vault.residualActiveItems,
+          trashedItems:.cleanup.vault.trashedItems}}}' <<< "$evidence_line" >&2
+  fi
   exit 1
 fi
 
