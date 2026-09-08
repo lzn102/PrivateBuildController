@@ -341,7 +341,7 @@ rm -rf "$state_dir"
 rm -f "$target_home/.development-deploy-transactions/active"
 
 build_command="$(printf '%s' 'printf artifact > "$DEVELOPMENT_ARTIFACT_PATH"' | base64 | tr -d '\n')"
-e2e_command="$(printf '%s' 'printf '\''%s\n'\'' '\''[PassKeyExt E2E scenario] label=passkey name=AssertionError failed=true'\'' '\''{"buildId":"0123456789abcdef0123456789abcdef01234567","ok":false,"failure":{"code":"","name":"AggregateError","stage":"scenario-groups"},"scenarios":[{"label":"passkey","ok":false,"error":{"code":"","name":"AssertionError"}}],"cleanup":{"profileRemoved":true,"testSiteAccountsRemoved":2,"controlPlane":{"residualActiveSessions":0,"residualClients":0,"residualPolicies":0},"extensionCache":{"cleared":true},"vault":{"residualActiveItems":0,"trashedItems":2}},"private":"pkx_dev_must-not-leak"}'\''; exit 23' | base64 | tr -d '\n')"
+e2e_command="$(printf '%s' 'printf '\''%s\n'\'' '\''[PassKeyExt E2E scenario] label=passkey name=AssertionError failed=true'\'' '\''{"buildId":"0123456789abcdef0123456789abcdef01234567","ok":false,"failure":{"code":"","name":"AggregateError","stage":"scenario-groups"},"scenarios":[{"label":"passkey","ok":false,"error":{"code":"","name":"AssertionError","stage":"passkey-selection"}}],"cleanup":{"profileRemoved":true,"testSiteAccountsRemoved":2,"controlPlane":{"residualActiveSessions":0,"residualClients":0,"residualPolicies":0},"extensionCache":{"cleared":true},"vault":{"residualActiveItems":0,"trashedItems":2}},"private":"pkx_dev_must-not-leak"}'\''; exit 23' | base64 | tr -d '\n')"
 cat > "$tmp/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -369,6 +369,7 @@ fi
 grep -Fq 'Development E2E failed' "$tmp/e2e-error"
 grep -Fq '[PassKeyExt E2E scenario] label=passkey name=AssertionError failed=true' "$tmp/e2e-error"
 grep -Fq '"stage":"scenario-groups"' "$tmp/e2e-error"
+grep -Fq '"stage":"passkey-selection"' "$tmp/e2e-error"
 grep -Fq '"residualClients":0' "$tmp/e2e-error"
 if grep -Fq 'must-not-leak' "$tmp/e2e-error"; then
   echo "E2E diagnostics exposed a secret-bearing evidence field" >&2

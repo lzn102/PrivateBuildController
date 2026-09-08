@@ -74,7 +74,7 @@ if ! (cd "$SOURCE_DIR" && timeout --signal=TERM --kill-after=30s 20m \
       '.buildId == $build_id and (.ok | type == "boolean") and (.scenarios | type == "array")' \
       >/dev/null 2>&1 <<< "$evidence_line"; then
     jq -c '{buildId,ok,failure:(.failure | if type == "object" then {code,name,stage} else null end),
-      scenarios:[.scenarios[] | {label,ok,error:(.error | if type == "object" then {code,name} else null end)}],
+      scenarios:[.scenarios[] | {label,ok,error:(.error | if type == "object" then {code,name,stage} else null end)}],
       cleanup:{profileRemoved:.cleanup.profileRemoved,testSiteAccountsRemoved:.cleanup.testSiteAccountsRemoved,
         controlPlane:{residualActiveSessions:.cleanup.controlPlane.residualActiveSessions,
           residualClients:.cleanup.controlPlane.residualClients,residualPolicies:.cleanup.controlPlane.residualPolicies},
