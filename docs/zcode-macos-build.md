@@ -8,6 +8,9 @@ Gitea HTTPS 源地址和完整 commit SHA，不从 GitHub checkout 产品源码�
 归档交付到 R2 或 direct 目标。它不使用 GitHub Artifact、Cache，也不创建正式
 Gitea Release。
 
+源码拉取脚本兼容 macOS 默认用户态：有 GNU `timeout` 时使用系统命令，否则使用
+Bash 计时和进程清理实现 5 分钟 fetch 上限。
+
 运行前需要控制仓库配置 `TRUSTED_ACTOR` variable，以及现有的 Tailscale、Gitea
 只读源码、R2 或 direct secrets。构建输入应使用 ZCode Gitea 仓库的完整 commit
 SHA；重复构建会进入不同的 GitHub run 目录，不覆盖旧 staging。
