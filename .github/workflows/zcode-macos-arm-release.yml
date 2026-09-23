@@ -35,7 +35,6 @@ jobs:
       BUILD_TARGET: macos-arm64
       PACKAGE_NAME: xcode-macos-arm64-release-placeholder.tar.gz
       SOURCE_REPO_URL: ${{ inputs.source_repo_url }}
-      REPOSITORY_API_URL: ${{ secrets.REPOSITORY_API_URL }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       ZCODE_ENV: production
       ZCODE_PREVIEW_IDENTITY: "0"

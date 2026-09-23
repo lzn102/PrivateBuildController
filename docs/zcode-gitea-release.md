@@ -10,8 +10,8 @@ Release 发布。
 
 - `GITEA_SOURCE_TOKEN`：读取私有源码时使用；
 - `GITEA_PACKAGE_TOKEN`：创建 Release、上传资产和发布草稿所需的 Gitea token；工作流会将它映射到发布脚本使用的 `GITEA_RELEASE_TOKEN` 环境变量；
-- `SOURCE_REPO_URL` 或 workflow 输入中的 Gitea 源地址；
-- `REPOSITORY_API_URL`：以 `/api/v1/repos/<owner>/<repo>` 结尾的 Gitea API 地址；
+- workflow 输入中的 Gitea 源地址（同时作为发布目标仓库）；
+- 发布目标从 `source_repo_url` 的 owner/repository 推导为同一个 Gitea 仓库，不读取控制器中其他项目的 `REPOSITORY_API_URL`；
 - `TAILSCALE_OAUTH_CLIENT_ID`、`TAILSCALE_OAUTH_SECRET`、`TAILSCALE_TAGS`；
 - `TRUSTED_ACTOR`：允许执行发布的 GitHub 用户名。
 
