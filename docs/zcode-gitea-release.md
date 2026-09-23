@@ -9,7 +9,7 @@ Release 发布。
 设置：
 
 - `GITEA_SOURCE_TOKEN`：读取私有源码时使用；
-- `GITEA_PACKAGE_TOKEN`：创建 Release、上传资产和发布草稿所需的 Gitea token；工作流会将它映射到发布脚本使用的 `GITEA_RELEASE_TOKEN` 环境变量；
+- `GITEA_ZCODE_RELEASE_TOKEN`：对 `XCode/ZCode` 有写入权限的 Gitea token；工作流会将它映射到发布脚本使用的 `GITEA_RELEASE_TOKEN` 环境变量；不要复用控制器中其他项目的 `GITEA_PACKAGE_TOKEN`；
 - workflow 输入中的 Gitea 源地址（同时作为发布目标仓库）；
 - 发布目标从 `source_repo_url` 的 owner/repository 推导为同一个 Gitea 仓库，不读取控制器中其他项目的 `REPOSITORY_API_URL`；
 - `TAILSCALE_OAUTH_CLIENT_ID`、`TAILSCALE_OAUTH_SECRET`、`TAILSCALE_TAGS`；
