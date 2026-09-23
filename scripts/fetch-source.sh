@@ -23,8 +23,13 @@ chmod 700 "$askpass"
 
 git init --quiet "$SOURCE_DIR"
 git -C "$SOURCE_DIR" remote add source "$SOURCE_REPO_URL"
-GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
-  timeout 300s git -C "$SOURCE_DIR" fetch --quiet --depth=1 source "$BUILD_ID"
+if command -v timeout >/dev/null 2>&1; then
+  GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
+    timeout 300s git -C "$SOURCE_DIR" fetch --quiet --depth=1 source "$BUILD_ID"
+else
+  GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
+    git -C "$SOURCE_DIR" fetch --quiet --depth=1 source "$BUILD_ID"
+fi
 git -C "$SOURCE_DIR" checkout --quiet --detach FETCH_HEAD
 git -C "$SOURCE_DIR" remote remove source
 rm -rf "$askpass_dir"

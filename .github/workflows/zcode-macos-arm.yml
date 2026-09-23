@@ -1,0 +1,110 @@
+name: XCode macOS ARM staging build
+run-name: XCode macOS ARM staging ${{ inputs.source_ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo_url:
+        description: Gitea HTTPS URL of the XCode source repository
+        required: true
+        type: string
+      source_ref:
+        description: Exact 40-character Gitea commit SHA to build
+        required: true
+        type: string
+      delivery_mode:
+        description: Build output destination
+        required: true
+        default: r2
+        type: choice
+        options: [r2, direct]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xcode-macos-arm-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' && github.actor == vars.TRUSTED_ACTOR
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      BUILD_ID: ${{ inputs.source_ref }}
+      BUILD_TARGET: macos-arm64
+      PACKAGE_NAME: xcode-macos-arm64.tar.gz
+      R2_PREFIX: xcode/macos-arm64/${{ inputs.source_ref }}
+      SOURCE_REPO_URL: ${{ inputs.source_repo_url }}
+      ZCODE_ENV: production
+      ZCODE_PREVIEW_IDENTITY: "0"
+      ZCODE_ENABLE_MAC_SIGN: "0"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+    steps:
+      - name: Checkout controller files only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.0
+
+      - name: Prepare ephemeral runner paths
+        shell: bash
+        run: bash scripts/normalize-runner-paths.sh
+
+      - name: Verify macOS ARM runner
+        shell: bash
+        run: test "$(uname -s)" = Darwin && test "$(uname -m)" = arm64
+
+      - name: Join tailnet temporarily
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888 # v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ secrets.TAILSCALE_TAGS }}
+          use-cache: false
+
+      - name: Fetch exact source revision
+        shell: bash
+        env:
+          GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+        run: bash scripts/fetch-source.sh
+
+      - name: Build XCode macOS ARM package
+        shell: bash
+        run: bash scripts/run-private-build.sh
+
+      - name: Package build output
+        shell: bash
+        run: bash scripts/package-output.sh
+
+      - name: Deliver through R2
+        if: inputs.delivery_mode == 'r2'
+        shell: bash
+        env:
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: bash scripts/deliver-r2.sh
+
+      - name: Deliver directly
+        if: inputs.delivery_mode == 'direct'
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.TARGET_SSH_HOST }}
+          DEPLOY_USER: ${{ secrets.TARGET_SSH_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_DIRECTORY }}
+          DEPLOY_SSH_KEY: ${{ secrets.TARGET_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.TARGET_SSH_KNOWN_HOSTS }}
+        run: bash scripts/deliver-direct.sh
+
+      - name: Remove temporary data
+        if: always()
+        shell: bash
+        run: bash scripts/cleanup.sh
