@@ -1,5 +1,5 @@
-import { createReadStream } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { openAsBlob } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { generateElectronManifest } from "./generate-electron-manifest.mjs";
 
@@ -127,27 +127,42 @@ try {
 } catch (error) {
   if (error?.status !== 404) throw error;
 }
+let release;
 if (existing) {
-  throw new Error(`Gitea Release already exists for ${tag}; refusing to overwrite it`);
+  if (!existing.draft) {
+    throw new Error(`Gitea Release already exists for ${tag}; refusing to overwrite it`);
+  }
+  if (existing.target_commitish !== sourceRef) {
+    throw new Error(`Existing draft Release ${tag} targets ${existing.target_commitish}, expected ${sourceRef}`);
+  }
+  release = existing;
+  for (const asset of existing.assets ?? []) {
+    await giteaRequest({
+      apiBase: repository.apiBase,
+      token,
+      path: `${repoPath}/releases/${encodePathSegment(String(release.id))}/assets/${encodePathSegment(String(asset.id))}`,
+      method: "DELETE",
+    });
+  }
+} else {
+  release = await giteaRequest({
+    apiBase: repository.apiBase,
+    token,
+    path: `${repoPath}/releases`,
+    method: "POST",
+    contentType: "application/json",
+    body: JSON.stringify({
+      tag_name: tag,
+      target_commitish: sourceRef,
+      name: process.env.RELEASE_NAME?.trim() || `XCode ${version}`,
+      body:
+        process.env.RELEASE_BODY?.trim() ||
+        `XCode ${version} macOS ARM release\n\nSource commit: ${sourceRef}`,
+      draft: true,
+      prerelease: false,
+    }),
+  });
 }
-
-const release = await giteaRequest({
-  apiBase: repository.apiBase,
-  token,
-  path: `${repoPath}/releases`,
-  method: "POST",
-  contentType: "application/json",
-  body: JSON.stringify({
-    tag_name: tag,
-    target_commitish: sourceRef,
-    name: process.env.RELEASE_NAME?.trim() || `XCode ${version}`,
-    body:
-      process.env.RELEASE_BODY?.trim() ||
-      `XCode ${version} macOS ARM release\n\nSource commit: ${sourceRef}`,
-    draft: true,
-    prerelease: false,
-  }),
-});
 if (!release?.id) throw new Error("Gitea did not return a release id");
 
 const releaseAssetBaseUrl = process.env.GITEA_PUBLIC_BASE_URL?.trim() || repository.origin;
@@ -160,16 +175,16 @@ const generated = await generateElectronManifest({
 
 for (const assetName of generated.assetNames) {
   const assetPath = join(outputDir, assetName);
-  const assetStats = await stat(assetPath);
   const uploadPath = `${repoPath}/releases/${encodePathSegment(String(release.id))}/assets?name=${encodeURIComponent(assetName)}`;
+  // Gitea 的 Release 资产接口要求 multipart 的 attachment 字段；原始二进制请求会让上传停在服务端等待表单边界。
+  const form = new FormData();
+  form.append("attachment", await openAsBlob(assetPath, { type: "application/octet-stream" }), assetName);
   await giteaRequest({
     apiBase: repository.apiBase,
     token,
     path: uploadPath,
     method: "POST",
-    contentType: "application/octet-stream",
-    length: assetStats.size,
-    body: createReadStream(assetPath),
+    body: form,
   });
   console.log(`Uploaded ${assetName}`);
 }
