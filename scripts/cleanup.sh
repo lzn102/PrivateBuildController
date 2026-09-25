@@ -6,6 +6,8 @@ docker image rm "${IMAGE_REF:-}" >/dev/null 2>&1 || true
 
 for target in \
   "${SOURCE_DIR:-${RUNNER_TEMP:-/tmp}/private-source}" \
+  "${RUNNER_TEMP:-}/zcode-cua-helper-app" \
+  "${RUNNER_TEMP:-}/zcode-cua-helper-app.zip" \
   "${OUTPUT_DIR:-}" \
   "${PACKAGE_PATH:-}" \
   "${PACKAGE_PATH:+$PACKAGE_PATH.sha256}" \

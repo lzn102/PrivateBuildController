@@ -59,4 +59,8 @@ git -C "$SOURCE_DIR" remote remove source
 rm -rf "$askpass_dir"
 
 test "$(git -C "$SOURCE_DIR" rev-parse HEAD)" = "$BUILD_ID"
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  SOURCE_DIR="$SOURCE_DIR" bash "$script_dir/fetch-cua-helper-app.sh"
+fi
 echo "Private source prepared"

@@ -8,12 +8,18 @@ Release 发布。
 正式发布只接受手动触发，且 `github.actor` 必须等于 `TRUSTED_ACTOR`。需要在控制仓库
 设置：
 
-- `GITEA_SOURCE_TOKEN`：读取私有源码时使用；
+- `GITEA_SOURCE_TOKEN`：读取私有源码和私有 CUA Helper Release 附件时使用；
+- 私有 CUA Helper 的 Release URL、归档 SHA-256 和稳定签名证书 SHA-1 固定在 `scripts/fetch-cua-helper-app.sh`；更新该资产时同步更新这三个 pin。签名私钥留在受信任设备，不上传到 GitHub。
 - `GITEA_ZCODE_RELEASE_TOKEN`：对 `XCode/ZCode` 有写入权限的 Gitea token；工作流会将它映射到发布脚本使用的 `GITEA_RELEASE_TOKEN` 环境变量；不要复用控制器中其他项目的 `GITEA_PACKAGE_TOKEN`；
 - workflow 输入中的 Gitea 源地址（同时作为发布目标仓库）；
 - 发布目标从 `source_repo_url` 的 owner/repository 推导为同一个 Gitea 仓库，不读取控制器中其他项目的 `REPOSITORY_API_URL`；
 - `TAILSCALE_OAUTH_CLIENT_ID`、`TAILSCALE_OAUTH_SECRET`、`TAILSCALE_TAGS`；
 - `TRUSTED_ACTOR`：允许执行发布的 GitHub 用户名。
+
+源码拉取步骤会一并下载固定的私有 CUA Helper 签名包并核对归档 SHA-256，通过
+`GITHUB_ENV` 将解包后的路径传给构建步骤；桌面构建再校验 Helper
+的版本、arm64 launcher、bundle ID、证书 SHA-1 和 designated requirement。签名私钥不离开
+受信任设备；任务结束时清理私有 Helper 包和桌面源码。缺少任一固定值时，工作流会在构建前失败。
 
 `release_tag` 可留空，脚本会使用源码根 `package.json` 的版本生成 `v<version>`；如果
 填写，必须与该版本一致。同一个 tag 已存在 Release 时流程直接失败，不覆盖已发布资产。
