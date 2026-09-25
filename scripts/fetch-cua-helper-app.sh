@@ -7,6 +7,7 @@ umask 077
 ZCODE_CUA_HELPER_APP_URL="${ZCODE_CUA_HELPER_APP_URL:-https://gitea.kudu-wall.ts.net/XCode/ZCode-CUA-Helper-Private/releases/download/v3.14.3/ZCode-Computer-Use-Helper-3.14.3.zip}"
 ZCODE_CUA_HELPER_APP_SHA256="${ZCODE_CUA_HELPER_APP_SHA256:-b386364aa7a8e551101fc653eb4eb1484fda78fa741b4182581af9be2c28661a}"
 ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1="${ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1:-14D3F724965D89C9E1DF1223B6E06B328BFF99F1}"
+export ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1
 SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
 allowed_prefix="https://gitea.kudu-wall.ts.net/XCode/ZCode-CUA-Helper-Private/releases/download/"
