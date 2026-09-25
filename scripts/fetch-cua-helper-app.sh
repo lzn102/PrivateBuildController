@@ -10,6 +10,11 @@ ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1="${ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1
 export ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1
 SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
+helper_token_user="$(curl --fail --silent --show-error \
+  --header "Authorization: token $GITEA_SOURCE_TOKEN" \
+  "https://gitea.kudu-wall.ts.net/api/v1/user" | node -e 'let data="";process.stdin.on("data",chunk=>data+=chunk);process.stdin.on("end",()=>process.stdout.write(JSON.parse(data).login))')"
+printf 'Gitea source token principal: %s\n' "$helper_token_user"
+
 allowed_prefix="https://gitea.kudu-wall.ts.net/XCode/ZCode-CUA-Helper-Private/releases/download/"
 if [[ "$ZCODE_CUA_HELPER_APP_URL" != "$allowed_prefix"* ]]; then
   echo "Refusing to send the Gitea source token outside the private CUA Helper release path" >&2
