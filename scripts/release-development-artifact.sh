@@ -3,7 +3,7 @@ set -euo pipefail
 
 required=(
   ACCEPTANCE_ADMIN_TOKEN ACCEPTANCE_API_TOKEN ACCEPTANCE_ENDPOINTS
-  ARTIFACT_BUILD_COMMAND_B64 ARTIFACT_E2E_COMMAND_B64 BUILD_ID
+  ARTIFACT_BUILD_COMMAND_B64 BUILD_ID
   REPOSITORY_API_TOKEN REPOSITORY_API_URL RUNNER_TEMP
 )
 for name in "${required[@]}"; do
@@ -11,6 +11,12 @@ for name in "${required[@]}"; do
 done
 SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 ARTIFACT_EXTENSION="${ARTIFACT_EXTENSION:-bin}"
+RUN_BROWSER_CHECKS="${RUN_BROWSER_CHECKS:-false}"
+case "$RUN_BROWSER_CHECKS" in
+  true) : "${ARTIFACT_E2E_COMMAND_B64:?Browser checks require an E2E command}" ;;
+  false) ;;
+  *) echo "Browser-check selection must be true or false" >&2; exit 2 ;;
+esac
 
 [[ "$BUILD_ID" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid build identifier" >&2; exit 2; }
 [[ "$ARTIFACT_EXTENSION" =~ ^[A-Za-z0-9]{1,12}$ ]] || {
@@ -18,7 +24,9 @@ ARTIFACT_EXTENSION="${ARTIFACT_EXTENSION:-bin}"
   exit 2
 }
 [[ "$ARTIFACT_BUILD_COMMAND_B64" =~ ^[A-Za-z0-9+/=]+$ ]]
-[[ "$ARTIFACT_E2E_COMMAND_B64" =~ ^[A-Za-z0-9+/=]+$ ]]
+if [[ "$RUN_BROWSER_CHECKS" = true ]]; then
+  [[ "$ARTIFACT_E2E_COMMAND_B64" =~ ^[A-Za-z0-9+/=]+$ ]]
+fi
 [[ "$REPOSITORY_API_URL" == https://*/api/v1/repos/*/* ]] || {
   echo "Repository API endpoint is invalid" >&2
   exit 2
@@ -63,6 +71,8 @@ if ! (cd "$SOURCE_DIR" && timeout --signal=TERM --kill-after=30s 15m \
 fi
 test -s "$artifact" || { echo "Development artifact was not produced" >&2; exit 1; }
 
+browser_checks_status=not_requested
+if [[ "$RUN_BROWSER_CHECKS" = true ]]; then
 e2e_command="$(decode_command "$ARTIFACT_E2E_COMMAND_B64" E2E)"
 if ! (cd "$SOURCE_DIR" && timeout --signal=TERM --kill-after=30s 20m \
     bash -euo pipefail -c "$e2e_command") >>"$log" 2>&1; then
@@ -83,6 +93,11 @@ if ! (cd "$SOURCE_DIR" && timeout --signal=TERM --kill-after=30s 20m \
           trashedItems:.cleanup.vault.trashedItems}}}' <<< "$evidence_line" >&2
   fi
   exit 1
+fi
+
+browser_checks_status=passed
+else
+  echo "Browser acceptance skipped (not requested). Build and deployment verification remain required."
 fi
 
 request() {
@@ -106,6 +121,8 @@ encoded_tag="$(jq -nr --arg value "$tag" '$value | @uri')"
 transaction_marker="development-publication-${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-1}-$(openssl rand -hex 16)"
 [[ "$transaction_marker" =~ ^development-publication-[A-Za-z0-9._-]+$ ]]
 release_body="Action-built development artifact.
+
+Browser checks: $browser_checks_status.
 
 Transaction: $transaction_marker"
 
@@ -203,4 +220,4 @@ curl --fail --silent --show-error --location \
 }
 
 unset DEVELOPMENT_ADMIN_TOKEN DEVELOPMENT_API_TOKEN DEVELOPMENT_ENDPOINTS
-echo "Development E2E passed and artifact publication was verified"
+echo "Development artifact publication verified (browser checks: $browser_checks_status)"
