@@ -1,21 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
+IMAGE_TRANSPORT="${IMAGE_TRANSPORT:-relay}"
+case "$IMAGE_TRANSPORT" in relay|registry) ;; *) echo "Invalid image transport" >&2; exit 2;; esac
 
 required=(
   BUILD_ID DEPLOY_BUILD_VARIABLE DEPLOY_COMPOSE_FILE DEPLOY_COMPOSE_PROJECT
   DEPLOY_DATA_DIRECTORIES DEPLOY_DIRECTORY DEPLOY_ENV_FILE_B64 DEPLOY_FILES DEPLOY_IMAGE_VARIABLE
   DEPLOY_NETWORK_SERVICE DEPLOY_NETWORK_STATE_FILE DEPLOY_SERVICE_NAME IMAGE_REF
-  R2_ACCESS_KEY_ID R2_ARCHIVE_SHA256 R2_BUCKET R2_ENDPOINT R2_OBJECT_KEY
-  R2_SECRET_ACCESS_KEY REGISTRY_HOST REGISTRY_USERNAME REGISTRY_WRITE_TOKEN
-  GITHUB_OUTPUT RELAY_ENCRYPTION_KEY RUNNER_TEMP TARGET_SSH_HOST TARGET_SSH_KNOWN_HOSTS
+  REGISTRY_HOST REGISTRY_USERNAME REGISTRY_WRITE_TOKEN
+  GITHUB_OUTPUT RUNNER_TEMP TARGET_SSH_HOST TARGET_SSH_KNOWN_HOSTS
   TARGET_SSH_PRIVATE_KEY TARGET_SSH_USER
 )
+if test "$IMAGE_TRANSPORT" = relay; then
+  required+=(R2_ACCESS_KEY_ID R2_ARCHIVE_SHA256 R2_BUCKET R2_ENDPOINT R2_OBJECT_KEY R2_SECRET_ACCESS_KEY RELAY_ENCRYPTION_KEY)
+else
+  required+=(REGISTRY_SOURCE_IMAGE REGISTRY_SOURCE_DIGEST)
+fi
 for name in "${required[@]}"; do
   test -n "${!name:-}" || { echo "$name is required" >&2; exit 2; }
 done
 SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 
-for command_name in aws base64 node scp sha256sum ssh tar; do
+commands=(base64 node scp sha256sum ssh tar)
+if test "$IMAGE_TRANSPORT" = relay; then commands+=(aws); fi
+for command_name in "${commands[@]}"; do
   command -v "$command_name" >/dev/null || {
     echo "Required command is unavailable: $command_name" >&2
     exit 1
@@ -31,10 +39,16 @@ done
 [[ "$IMAGE_REF" =~ ^[A-Za-z0-9._:/-]+$ ]]
 [[ "$TARGET_SSH_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
 [[ "$TARGET_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+if test "$IMAGE_TRANSPORT" = relay; then
 [[ "$R2_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
 [[ "$R2_BUCKET" =~ ^[A-Za-z0-9._-]+$ ]]
 [[ "$R2_ENDPOINT" == https://* ]]
 [[ "$R2_OBJECT_KEY" =~ ^relay/[A-Za-z0-9._-]+$ ]]
+else
+  [[ "$REGISTRY_SOURCE_IMAGE" =~ ^[A-Za-z0-9._:/-]+$ ]]
+  [[ "$REGISTRY_SOURCE_IMAGE" == "$REGISTRY_HOST/"* ]]
+  [[ "$REGISTRY_SOURCE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+fi
 [[ "$REGISTRY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
 [[ "$REGISTRY_USERNAME" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
 
@@ -84,22 +98,28 @@ transaction_id="${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-1}-${BUILD_ID:0:1
 printf 'transaction_id=%s\n' "$transaction_id" >> "$GITHUB_OUTPUT"
 ssh "${ssh_args[@]}" "$target" true
 
+relay_url=""
+relay_passphrase=""
+if test "$IMAGE_TRANSPORT" = relay; then
 export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
 export AWS_DEFAULT_REGION=auto
 export AWS_EC2_METADATA_DISABLED=true
 relay_uri="s3://$R2_BUCKET/$R2_OBJECT_KEY"
+relay_url="$(aws s3 presign --endpoint-url "$R2_ENDPOINT" --expires-in 3600 "$relay_uri")"
+relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$R2_OBJECT_KEY" | sha256sum | cut -d ' ' -f 1)"
+fi
 cleanup() {
   set +e
-  aws s3 rm --only-show-errors --endpoint-url "$R2_ENDPOINT" "$relay_uri" >/dev/null 2>&1
+  if test "$IMAGE_TRANSPORT" = relay; then
+    aws s3 rm --only-show-errors --endpoint-url "$R2_ENDPOINT" "$relay_uri" >/dev/null 2>&1
+  fi
   ssh "${ssh_args[@]}" "$target" \
     "rm -f '$remote_payload'; rm -rf '$remote_staging'" >/dev/null 2>&1
   rm -f "$payload"
   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 }
 trap 'status=$?; trap - EXIT; cleanup; exit "$status"' EXIT
-relay_url="$(aws s3 presign --endpoint-url "$R2_ENDPOINT" --expires-in 3600 "$relay_uri")"
-relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$R2_OBJECT_KEY" | sha256sum | cut -d ' ' -f 1)"
 
 tar -C "$SOURCE_DIR" -czf - -- "${deploy_files[@]}" \
   | ssh "${ssh_args[@]}" "$target" \
@@ -113,11 +133,12 @@ fi
 encode() { printf '%s' "$1" | base64 | tr -d '\n'; }
 values=(
   "$REGISTRY_WRITE_TOKEN" "$REGISTRY_HOST" "$REGISTRY_USERNAME" "$IMAGE_REF"
-  "$auth_key" "$relay_url" "$relay_passphrase" "$R2_ARCHIVE_SHA256"
+  "$auth_key" "$relay_url" "$relay_passphrase" "${R2_ARCHIVE_SHA256:-}"
   "$DEPLOY_ENV_FILE_B64" "$DEPLOY_COMPOSE_FILE" "$DEPLOY_COMPOSE_PROJECT"
   "$DEPLOY_SERVICE_NAME" "$DEPLOY_NETWORK_SERVICE" "$DEPLOY_NETWORK_STATE_FILE"
   "$DEPLOY_IMAGE_VARIABLE" "$DEPLOY_BUILD_VARIABLE" "$DEPLOY_DATA_DIRECTORIES"
   "$(printf '%s\n' "${deploy_files[@]}")" "$BUILD_ID" "$transaction_id"
+  "$IMAGE_TRANSPORT" "${REGISTRY_SOURCE_IMAGE:-}" "${REGISTRY_SOURCE_DIGEST:-}"
 )
 for value in "${values[@]}"; do
   encode "$value"
@@ -154,6 +175,9 @@ data_directories="$(decode "${lines[16]}")"
 deploy_files="$(decode "${lines[17]}")"
 build_id="$(decode "${lines[18]}")"
 transaction_id="$(decode "${lines[19]}")"
+image_transport="$(decode "${lines[20]}")"
+registry_source_image="$(decode "${lines[21]}")"
+registry_source_digest="$(decode "${lines[22]}")"
 
 for command_name in base64 curl docker install ln openssl sed sha256sum sleep timeout zstd; do
   command -v "$command_name" >/dev/null || {
@@ -247,6 +271,20 @@ if ! ln "$state_dir/active-pointer" "$active_pointer"; then
   exit 1
 fi
 
+if ! printf '%s' "$registry_token" | docker login "$registry_host" --username "$registry_user" --password-stdin >/dev/null 2>&1; then
+  echo "Registry authentication failed" >&2
+  exit 1
+fi
+if test "$image_transport" = registry; then
+  source_ref="$registry_source_image@$registry_source_digest"
+  if ! timeout --signal=TERM --kill-after=30s 10m docker pull "$source_ref" >/dev/null 2>&1; then
+    echo "Private registry image download failed" >&2
+    exit 1
+  fi
+  image_revision="$(docker image inspect "$source_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+  test "$image_revision" = "$build_id" || { echo "Registry image revision mismatch" >&2; exit 1; }
+  docker tag "$source_ref" "$image_ref"
+else
 relay_downloaded=false
 for attempt in 1 2 3 4 5 6; do
   if curl --fail --silent --show-error --location --continue-at - \
@@ -275,9 +313,6 @@ if ! docker image inspect "$image_ref" >/dev/null 2>&1; then
   echo "Loaded image verification failed" >&2
   exit 1
 fi
-if ! printf '%s' "$registry_token" | docker login "$registry_host" --username "$registry_user" --password-stdin >/dev/null 2>&1; then
-  echo "Registry authentication failed" >&2
-  exit 1
 fi
 if ! timeout --signal=TERM --kill-after=30s 10m docker push "$image_ref" >/dev/null 2>&1; then
   echo "Image publication failed" >&2

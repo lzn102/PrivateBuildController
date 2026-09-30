@@ -8,6 +8,15 @@ on:
         description: Exact private source revision
         required: true
         type: string
+      image_transport:
+        description: Image delivery transport
+        default: relay
+        type: choice
+        options: [relay, registry]
+      image_digest:
+        description: Immutable registry image digest
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -18,6 +27,7 @@ concurrency:
 
 jobs:
   build:
+    if: inputs.image_transport != 'registry'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -96,12 +106,16 @@ jobs:
         run: bash scripts/cleanup.sh
 
   deploy:
+    if: always() && (needs.build.result == 'success' || (inputs.image_transport == 'registry' && needs.build.result == 'skipped'))
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       BUILD_ID: ${{ inputs.build_id }}
       IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:dev-${{ inputs.build_id }}
+      IMAGE_TRANSPORT: ${{ inputs.image_transport || 'relay' }}
+      REGISTRY_SOURCE_IMAGE: ${{ secrets.DEV_WSL_REGISTRY_IMAGE }}
+      REGISTRY_SOURCE_DIGEST: ${{ inputs.image_digest }}
       R2_ARCHIVE_SHA256: ${{ needs.build.outputs.archive_sha256 }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
       R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
