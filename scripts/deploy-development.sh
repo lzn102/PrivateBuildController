@@ -14,7 +14,7 @@ required=(
 if test "$IMAGE_TRANSPORT" = relay; then
   required+=(R2_ACCESS_KEY_ID R2_ARCHIVE_SHA256 R2_BUCKET R2_ENDPOINT R2_OBJECT_KEY R2_SECRET_ACCESS_KEY RELAY_ENCRYPTION_KEY)
 else
-  required+=(REGISTRY_SOURCE_IMAGE REGISTRY_SOURCE_DIGEST)
+  required+=(REGISTRY_SOURCE_IMAGE REGISTRY_SOURCE_DIGEST REGISTRY_SOURCE_USER REGISTRY_SOURCE_TOKEN)
 fi
 for name in "${required[@]}"; do
   test -n "${!name:-}" || { echo "$name is required" >&2; exit 2; }
@@ -139,6 +139,7 @@ values=(
   "$DEPLOY_IMAGE_VARIABLE" "$DEPLOY_BUILD_VARIABLE" "$DEPLOY_DATA_DIRECTORIES"
   "$(printf '%s\n' "${deploy_files[@]}")" "$BUILD_ID" "$transaction_id"
   "$IMAGE_TRANSPORT" "${REGISTRY_SOURCE_IMAGE:-}" "${REGISTRY_SOURCE_DIGEST:-}"
+  "${REGISTRY_SOURCE_USER:-}" "${REGISTRY_SOURCE_TOKEN:-}"
 )
 for value in "${values[@]}"; do
   encode "$value"
@@ -178,6 +179,8 @@ transaction_id="$(decode "${lines[19]}")"
 image_transport="$(decode "${lines[20]}")"
 registry_source_image="$(decode "${lines[21]}")"
 registry_source_digest="$(decode "${lines[22]}")"
+registry_source_user="$(decode "${lines[23]}")"
+registry_source_token="$(decode "${lines[24]}")"
 
 for command_name in base64 curl docker install ln openssl sed sha256sum sleep timeout zstd; do
   command -v "$command_name" >/dev/null || {
@@ -276,6 +279,7 @@ if ! printf '%s' "$registry_token" | docker login "$registry_host" --username "$
   exit 1
 fi
 if test "$image_transport" = registry; then
+  printf '%s' "$registry_source_token" | docker login "$registry_host" --username "$registry_source_user" --password-stdin >/dev/null 2>&1
   source_ref="$registry_source_image@$registry_source_digest"
   if ! timeout --signal=TERM --kill-after=30s 10m docker pull "$source_ref" >/dev/null 2>&1; then
     echo "Private registry image download failed" >&2
@@ -314,6 +318,7 @@ if ! docker image inspect "$image_ref" >/dev/null 2>&1; then
   exit 1
 fi
 fi
+printf '%s' "$registry_token" | docker login "$registry_host" --username "$registry_user" --password-stdin >/dev/null 2>&1
 if ! timeout --signal=TERM --kill-after=30s 10m docker push "$image_ref" >/dev/null 2>&1; then
   echo "Image publication failed" >&2
   exit 1

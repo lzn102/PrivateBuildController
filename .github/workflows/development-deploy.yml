@@ -116,6 +116,8 @@ jobs:
       IMAGE_TRANSPORT: ${{ inputs.image_transport || 'relay' }}
       REGISTRY_SOURCE_IMAGE: ${{ secrets.DEV_WSL_REGISTRY_IMAGE }}
       REGISTRY_SOURCE_DIGEST: ${{ inputs.image_digest }}
+      REGISTRY_SOURCE_USER: passkeyext-ci
+      REGISTRY_SOURCE_TOKEN: ${{ secrets.DEV_WSL_REGISTRY_TOKEN }}
       R2_ARCHIVE_SHA256: ${{ needs.build.outputs.archive_sha256 }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
       R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
