@@ -8,6 +8,15 @@ on:
         description: Opaque build identifier
         required: true
         type: string
+      image_transport:
+        description: Image delivery transport
+        default: relay
+        type: choice
+        options: [relay, registry]
+      image_digest:
+        description: Immutable registry image digest
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -75,6 +84,7 @@ jobs:
         run: bash scripts/cleanup.sh
 
   service:
+    if: inputs.image_transport != 'registry'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -127,6 +137,7 @@ jobs:
         run: bash scripts/cleanup.sh
 
   deploy:
+    if: always() && needs.extension.result == 'success' && (needs.service.result == 'success' || (inputs.image_transport == 'registry' && needs.service.result == 'skipped'))
     needs: [extension, service]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -134,6 +145,11 @@ jobs:
       BUILD_ID: ${{ inputs.build_id }}
       IMAGE_REF: ${{ secrets.REGISTRY_IMAGE }}:${{ inputs.build_id }}
       REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      IMAGE_TRANSPORT: ${{ inputs.image_transport || 'relay' }}
+      REGISTRY_SOURCE_IMAGE: ${{ secrets.DEV_WSL_REGISTRY_IMAGE }}
+      REGISTRY_SOURCE_DIGEST: ${{ inputs.image_digest }}
+      REGISTRY_SOURCE_USER: passkeyext-ci
+      REGISTRY_SOURCE_TOKEN: ${{ secrets.DEV_WSL_REGISTRY_TOKEN }}
       R2_ARCHIVE_SHA256: ${{ needs.service.outputs.archive_sha256 }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
       R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
@@ -193,6 +209,19 @@ jobs:
           GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_PACKAGE_TOKEN }}
           REPOSITORY_API_URL: ${{ secrets.REPOSITORY_API_URL }}
         run: bash scripts/publish-release.sh
+
+      - name: Retire superseded environment
+        env:
+          TARGET_SSH_HOST: ${{ secrets.TARGET_SSH_HOST }}
+          TARGET_SSH_USER: ${{ secrets.TARGET_SSH_USER }}
+        run: |
+          set -euo pipefail
+          hook="$RUNNER_TEMP/private-source/scripts/retire-development-deployment.sh"
+          if test -f "$hook"; then
+            ssh -i "$RUNNER_TEMP/deploy-key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o "UserKnownHostsFile=$RUNNER_TEMP/deploy-known-hosts" \
+              "$TARGET_SSH_USER@$TARGET_SSH_HOST" "BUILD_ID='$BUILD_ID' bash -s" < "$hook"
+          fi
 
       - name: Remove temporary data
         if: always()

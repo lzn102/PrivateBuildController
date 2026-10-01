@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+IMAGE_TRANSPORT="${IMAGE_TRANSPORT:-relay}"
+case "$IMAGE_TRANSPORT" in relay|registry) ;; *) exit 2 ;; esac
 
 : "${BUILD_ID:?BUILD_ID is required}"
 : "${DEPLOY_DIRECTORY:?DEPLOY_DIRECTORY is required}"
@@ -11,6 +13,7 @@ set -euo pipefail
 : "${REGISTRY_HOST:?REGISTRY_HOST is required}"
 : "${REGISTRY_WRITE_TOKEN:?REGISTRY_WRITE_TOKEN is required}"
 : "${REGISTRY_USERNAME:?REGISTRY_USERNAME is required}"
+if test "$IMAGE_TRANSPORT" = relay; then
 : "${RELAY_ENCRYPTION_KEY:?RELAY_ENCRYPTION_KEY is required}"
 : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
 : "${R2_ARCHIVE_SHA256:?R2_ARCHIVE_SHA256 is required}"
@@ -18,6 +21,15 @@ set -euo pipefail
 : "${R2_ENDPOINT:?R2_ENDPOINT is required}"
 : "${R2_OBJECT_KEY:?R2_OBJECT_KEY is required}"
 : "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}"
+else
+  : "${REGISTRY_SOURCE_IMAGE:?}"
+  : "${REGISTRY_SOURCE_DIGEST:?}"
+  : "${REGISTRY_SOURCE_USER:?}"
+  : "${REGISTRY_SOURCE_TOKEN:?}"
+  [[ "$REGISTRY_SOURCE_IMAGE" == "$REGISTRY_HOST/"* ]]
+  [[ "$REGISTRY_SOURCE_IMAGE" =~ ^[A-Za-z0-9._:/-]+$ ]]
+  [[ "$REGISTRY_SOURCE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+fi
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${SERVICE_COMPOSE_NAME:?SERVICE_COMPOSE_NAME is required}"
 : "${SERVICE_IMAGE_VARIABLE:?SERVICE_IMAGE_VARIABLE is required}"
@@ -32,10 +44,12 @@ SOURCE_DIR="${SOURCE_DIR:-$RUNNER_TEMP/private-source}"
 [[ "$TARGET_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
 [[ "$REGISTRY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
 [[ "$REGISTRY_USERNAME" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+if test "$IMAGE_TRANSPORT" = relay; then
 [[ "$R2_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
 [[ "$R2_BUCKET" =~ ^[A-Za-z0-9._-]+$ ]]
 [[ "$R2_ENDPOINT" == https://* ]]
 [[ "$R2_OBJECT_KEY" =~ ^relay/[A-Za-z0-9._-]+$ ]]
+fi
 [[ "$SERVICE_COMPOSE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
 [[ "$SERVICE_IMAGE_VARIABLE" =~ ^[A-Z][A-Z0-9_]*$ ]]
 [[ "$TAILSCALE_COMPOSE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
@@ -50,12 +64,17 @@ ssh_args=(-i "$key_file" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserK
 target="$TARGET_SSH_USER@$TARGET_SSH_HOST"
 ssh "${ssh_args[@]}" "$target" true
 
-for command_name in aws openssl sha256sum; do
+commands=(ssh scp)
+if test "$IMAGE_TRANSPORT" = relay; then commands+=(aws openssl sha256sum); fi
+for command_name in "${commands[@]}"; do
   command -v "$command_name" >/dev/null || {
     echo "Required command is unavailable: $command_name" >&2
     exit 1
   }
 done
+relay_url=""
+relay_passphrase=""
+if test "$IMAGE_TRANSPORT" = relay; then
 export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
 export AWS_DEFAULT_REGION=auto
@@ -68,6 +87,13 @@ cleanup_relay() {
 trap cleanup_relay EXIT
 relay_url="$(aws s3 presign --endpoint-url "$R2_ENDPOINT" --expires-in 1800 "$relay_uri")"
 relay_passphrase="$(printf '%s' "$RELAY_ENCRYPTION_KEY:$BUILD_ID:$R2_OBJECT_KEY" | sha256sum | cut -d ' ' -f 1)"
+fi
+
+if test -f "$SOURCE_DIR/scripts/prepare-production-deployment.sh"; then
+  ssh "${ssh_args[@]}" "$target" \
+    "DEPLOY_DIRECTORY='$DEPLOY_DIRECTORY' BUILD_ID='$BUILD_ID' bash -s" \
+    < "$SOURCE_DIR/scripts/prepare-production-deployment.sh"
+fi
 
 tar -C "$SOURCE_DIR" -czf - docker-compose.yml tailscale-serve.json \
   | ssh "${ssh_args[@]}" "$target" \
@@ -83,7 +109,7 @@ container_id="$(docker ps -aq \
   --filter "label=com.docker.compose.service=$TAILSCALE_COMPOSE_NAME" \
   | head -n 1)"
 test -n "$container_id"
-state_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/tailscale"}}{{.Name}}{{end}}{{end}}' "$container_id")"
+state_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/tailscale"}}{{.Source}}{{end}}{{end}}' "$container_id")"
 state_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
 test -n "$state_volume"
 docker run --rm -v "$state_volume:/state:ro" "$state_image" test -s /state/tailscaled.state
@@ -96,7 +122,8 @@ payload="$RUNNER_TEMP/deploy-input"
 remote_payload="/tmp/private-deploy-$BUILD_ID"
 printf '%s\n%s\n%s\n%s\n%s\n' \
   "$REGISTRY_WRITE_TOKEN" "$REGISTRY_HOST" "$REGISTRY_USERNAME" "$IMAGE_REF" "$auth_key" > "$payload"
-printf '%s\n%s\n%s\n' "$relay_url" "$relay_passphrase" "$R2_ARCHIVE_SHA256" >> "$payload"
+printf '%s\n%s\n%s\n' "$relay_url" "$relay_passphrase" "${R2_ARCHIVE_SHA256:-}" >> "$payload"
+printf '%s\n' "$IMAGE_TRANSPORT" "${REGISTRY_SOURCE_IMAGE:-}" "${REGISTRY_SOURCE_DIGEST:-}" "${REGISTRY_SOURCE_USER:-}" "${REGISTRY_SOURCE_TOKEN:-}" "$BUILD_ID" >> "$payload"
 chmod 600 "$payload"
 scp "${ssh_args[@]}" "$payload" "$target:$remote_payload"
 
@@ -117,8 +144,21 @@ chmod 0600 "$REMOTE_PAYLOAD"
   IFS= read -r relay_url
   IFS= read -r relay_passphrase
   IFS= read -r relay_sha256
+  IFS= read -r image_transport
+  IFS= read -r source_image
+  IFS= read -r source_digest
+  IFS= read -r source_user
+  IFS= read -r source_token
+  IFS= read -r build_id
 } < "$REMOTE_PAYLOAD"
 
+if test "$image_transport" = registry; then
+  printf '%s' "$source_token" | docker login "$registry_host" --username "$source_user" --password-stdin >/dev/null
+  source_ref="$source_image@$source_digest"
+  timeout --signal=TERM --kill-after=30s 10m docker pull "$source_ref" >/dev/null
+  test "$(docker image inspect "$source_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$build_id"
+  docker tag "$source_ref" "$image_ref"
+else
 curl --fail --silent --show-error --location --retry 3 --output "$relay_archive" "$relay_url"
 printf '%s  %s\n' "$relay_sha256" "$relay_archive" | sha256sum -c -
 export relay_passphrase
@@ -127,6 +167,7 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
   | zstd -d --quiet -o "$relay_tar"
 unset relay_passphrase
 docker load --input "$relay_tar" >/dev/null
+fi
 docker image inspect "$image_ref" >/dev/null
 
 deploy_dir="$HOME/$DEPLOY_DIRECTORY"
@@ -152,7 +193,12 @@ until docker exec "$tailscale_id" tailscale status --json | grep -q '"Online": t
   test "$attempt" -lt 30
   sleep 2
 done
-docker exec "$service_id" node scripts/verify-deployment.mjs
+attempt=0
+until docker exec "$service_id" node scripts/verify-deployment.mjs; do
+  attempt=$((attempt + 1))
+  test "$attempt" -lt 30
+  sleep 5
+done
 sed -i '/^TS_AUTHKEY=/d' "$envfile"
 chmod 0600 "$envfile"
 REMOTE
