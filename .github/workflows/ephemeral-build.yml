@@ -32,6 +32,10 @@ jobs:
     env:
       BUILD_ID: ${{ inputs.build_id }}
     steps:
+      - name: Prepare runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
       - name: Load controller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -155,6 +159,10 @@ jobs:
       R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
       R2_OBJECT_KEY: ${{ needs.service.outputs.object_key }}
     steps:
+      - name: Prepare runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
       - name: Load controller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
