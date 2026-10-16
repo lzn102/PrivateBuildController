@@ -47,3 +47,5 @@ manifest 中的 URL 指向同一个 Gitea Release 的下载资产，包含版本
 本次桌面发布使用私有仓库中同版本的自建 Helper 归档，保留既有稳定证书与 designated requirement，严格校验 SHA-256 和应用版本。只更新固定下载 URL 与哈希，不上传源码、产物到 GitHub Artifact；正式安装包仍仅发布到 Gitea。
 
 私有 Helper 下载单独使用发布仓库已有的 `GITEA_ZCODE_RELEASE_TOKEN`，通过步骤级 `GITEA_CUA_HELPER_TOKEN` 传入；不扩大或替换多个项目共用的 `GITEA_SOURCE_TOKEN`。下载脚本保留旧 token fallback 以兼容已有构建入口，仍严格限制凭据只能发往私有 Helper 下载前缀。
+
+发布上传长期无响应时，允许短时 macOS Runner 探针对同一草稿上传合成数据，记录 HTTP 状态、耗时与传输速度，并清理仅本次 run 命名的测试附件。探针不能上传 GitHub Artifact、不能公开草稿，不能修改正式应用或业务数据。
