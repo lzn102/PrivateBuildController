@@ -49,3 +49,7 @@ manifest 中的 URL 指向同一个 Gitea Release 的下载资产，包含版本
 私有 Helper 下载单独使用发布仓库已有的 `GITEA_ZCODE_RELEASE_TOKEN`，通过步骤级 `GITEA_CUA_HELPER_TOKEN` 传入；不扩大或替换多个项目共用的 `GITEA_SOURCE_TOKEN`。下载脚本保留旧 token fallback 以兼容已有构建入口，仍严格限制凭据只能发往私有 Helper 下载前缀。
 
 2026-10-16 一次性上传诊断：隔离 macOS Runner 以同一发布凭据向草稿上传 16 MiB 合成数据，60 秒发送约 9.1 MB（约 150 KB/s）后按上限超时；本机同一接口与 multipart 路径 16 MiB 约 2 秒成功。测试附件已清理，临时探针 workflow 与脚本在诊断后移除。正式构建 ZIP 为 225.8 MiB，慢速传输不能误判为编译失败。此次没有上传 GitHub Artifact、没有公开不完整草稿，也没有修改正式应用或业务数据。
+
+## 一次性加密中转恢复
+
+当直传 Gitea 的链路严重限速时，可按同一固定源码 SHA 重建，通过已配置的 R2 中转。产物先以随机 AES-256-GCM 密钥加密，密钥用调用者提供的 RSA 公钥 OAEP 包装；RSA 私钥仅留在调用者本机。R2 只收到密文。短时下载/删除签名 URL 与明文、密文 SHA-256 仅写入私有 Helper 仓库的临时附件，不写入 GitHub 日志、公开附件或 Artifact。接收者验密文摘要、解密认证和明文摘要后上传到 Gitea，同版本草稿仍按原发布规则完整校验后公开；回收 R2 对象及临时指针。不得改动本机正式应用，也不把中转变成本机编译。
