@@ -3,7 +3,8 @@ set -euo pipefail
 umask 077
 
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
-: "${GITEA_SOURCE_TOKEN:?GITEA_SOURCE_TOKEN is required}"
+helper_download_token="${GITEA_CUA_HELPER_TOKEN:-${GITEA_SOURCE_TOKEN:-}}"
+: "${helper_download_token:?GITEA_CUA_HELPER_TOKEN or GITEA_SOURCE_TOKEN is required}"
 ZCODE_CUA_HELPER_APP_URL="${ZCODE_CUA_HELPER_APP_URL:-https://gitea.kudu-wall.ts.net/XCode/ZCode-CUA-Helper-Private/releases/download/v3.15.2/ZCode-Computer-Use-Helper-3.15.2.zip}"
 ZCODE_CUA_HELPER_APP_SHA256="${ZCODE_CUA_HELPER_APP_SHA256:-f06114f7c5176d416dbc07335384adbbfa3d007537ebfcebde342d4d37a4a1f0}"
 ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1="${ZCODE_CUA_HELPER_EXPECTED_SIGNING_SHA1:-14D3F724965D89C9E1DF1223B6E06B328BFF99F1}"
@@ -28,7 +29,7 @@ if [[ -e "$extract_path" || -e "$archive_path" ]]; then
 fi
 mkdir -p "$extract_path"
 curl --fail --location --silent --show-error --retry 3 \
-  --header "Authorization: token $GITEA_SOURCE_TOKEN" \
+  --header "Authorization: token $helper_download_token" \
   --output "$archive_path" "$ZCODE_CUA_HELPER_APP_URL"
 actual_sha256="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
 expected_sha256="$(printf '%s' "$ZCODE_CUA_HELPER_APP_SHA256" | tr '[:upper:]' '[:lower:]')"
