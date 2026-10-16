@@ -41,3 +41,7 @@ manifest 中的 URL 指向同一个 Gitea Release 的下载资产，包含版本
 `ZCode` 数据目录；开发态使用 `dev.zcode.app.development`、`ZCode Dev` 目录以及
 9229 调试端口。二者共享 `zcode://` scheme，macOS 只会保留一个默认协议 handler，
 这是唯一需要注意的 LaunchServices 行为，不会造成数据目录或更新包冲突。
+
+## XCode 3.15.2 Helper 输入
+
+本次桌面发布使用私有仓库中同版本的自建 Helper 归档，保留既有稳定证书与 designated requirement，严格校验 SHA-256 和应用版本。只更新固定下载 URL 与哈希，不上传源码、产物到 GitHub Artifact；正式安装包仍仅发布到 Gitea。
