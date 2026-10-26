@@ -76,6 +76,7 @@ jobs:
         shell: bash
         env:
           GITEA_SOURCE_TOKEN: ${{ secrets.GITEA_SOURCE_TOKEN }}
+          GITEA_CUA_HELPER_TOKEN: ${{ secrets.GITEA_ZCODE_RELEASE_TOKEN }}
         run: bash scripts/fetch-source.sh
 
       - name: Build ZCode macOS ARM package

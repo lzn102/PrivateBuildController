@@ -15,5 +15,10 @@ Bash 计时和进程清理实现 5 分钟 fetch 上限。
 只读源码、R2 或 direct secrets。构建输入应使用 ZCode Gitea 仓库的完整 commit
 SHA；重复构建会进入不同的 GitHub run 目录，不覆盖旧 staging。
 
+staging 和正式构建都必须为私有 Computer Use Helper 下载单独传入
+`GITEA_CUA_HELPER_TOKEN`（复用已有 `GITEA_ZCODE_RELEASE_TOKEN` secret）；
+只读源码 token 不保证能读取私有 Helper release，缺失时下载会返回 404。
+该凭据仅用于已经限定的私有 Helper release 路径，不进入产品源码或构建产物。
+
 正式发布前还需要独立的 Release workflow：保留 Electron 原生安装包和
 `latest*.yml`，完成版本、校验和和平台资产校验后再发布 Gitea Release。
