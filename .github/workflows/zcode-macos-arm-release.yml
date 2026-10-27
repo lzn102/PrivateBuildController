@@ -29,7 +29,7 @@ jobs:
   release:
     if: github.event_name == 'workflow_dispatch' && github.actor == vars.TRUSTED_ACTOR
     runs-on: macos-14
-    timeout-minutes: 120
+    timeout-minutes: 240
     env:
       BUILD_ID: ${{ inputs.source_ref }}
       BUILD_TARGET: macos-arm64
