@@ -8,6 +8,8 @@
 
 直传首个附件长时间未完成时，并行启用既有的接收方公钥加密恢复流程，源码仍固定为 df1dfd2d1bddd49cbe38fb9733de80a1533fba7c。恢复流程不发布安装包，R2 仅暂存 AES-GCM 密文，取件指针仅放在私有 Helper 仓库；本机完成摘要和解密校验后才复用原发布脚本发布 Gitea。若原直传先成功则取消恢复流程。完成交付后清理密文、指针、临时密钥并移除恢复 workflow 与脚本，不改变后续常规入口。
 
+恢复构建 `40489753017` 已成功，原直传任务 `40485688212` 已停止后才从本机发布。Gitea `v3.16.6` 的 8 个附件、源码 SHA、两个完整匿名下载、SHA-256/SHA-512 和更新 manifest 均已核验。中转密文、私有指针与临时密钥在交付后清理，临时恢复 workflow 与脚本移除；未替换本机正式应用。
+
 `.github/workflows/zcode-macos-arm-release.yml` 从 Gitea 拉取指定完整 commit SHA，在
 `macos-14` 上执行 `ci/build.sh macos-arm64 <output-directory>`，然后创建 XCode/ZCode
 的草稿 Release，上传 DMG、ZIP、逐文件 SHA-256 和 Electron 更新 manifest，最后将草稿
@@ -41,9 +43,8 @@ Release 发布。
 - `latest-mac.yml`：传统 electron-updater 命名兼容文件。
 
 manifest 中的 URL 指向同一个 Gitea Release 的下载资产，包含版本、文件大小、SHA-256
-和 SHA-512。已打包桌面端仍请求自建服务的 manifest endpoint；自建服务负责按 stable
-或 preview channel 选择并转发对应 Release manifest，不由客户端运行时自行切换到可变
-的 Gitea 地址。
+和 SHA-512。当前正式构建内嵌更新源为该仓库的 Gitea releases/latest API，最终 ZIP/DMG
+校验会核对该地址，避免重新依赖本机旧 manifest endpoint。
 
 正式 Release 与开发版可以共存：Release 使用正式 app ID `dev.zcode.app` 和历史
 `ZCode` 数据目录；开发态使用 `dev.zcode.app.development`、`ZCode Dev` 目录以及
@@ -68,7 +69,7 @@ manifest 中的 URL 指向同一个 Gitea Release 的下载资产，包含版本
 
 桌面安装包包含四个平台的 Server 完整归档后，正式发布任务允许最长 240 分钟，
 用于完整构建、最终包校验及既有 Gitea 上传链路；不跳过校验、不改用公开 Artifact。
-CUA Helper 固定为与桌面版本一致的 3.16.5，继续使用原稳定签名证书。
+CUA Helper 固定为与桌面版本一致的 3.16.6，继续使用原稳定签名证书。
 
 ## 3.16.5 一次性传输恢复
 
