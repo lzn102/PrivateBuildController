@@ -1,5 +1,9 @@
 # XCode macOS ARM Gitea Release
 
+## 3.16.6 Helper 输入
+
+发布 Models.dev 查询与推理回填修复时使用私有 Helper 仓库的 3.16.6 签名包；归档摘要固定在下载脚本，稳定证书不变。固定桌面源码 SHA，经 GitHub 构建和最终包校验后发布 Gitea，保持本机正式应用不变。
+
 `.github/workflows/zcode-macos-arm-release.yml` 从 Gitea 拉取指定完整 commit SHA，在
 `macos-14` 上执行 `ci/build.sh macos-arm64 <output-directory>`，然后创建 XCode/ZCode
 的草稿 Release，上传 DMG、ZIP、逐文件 SHA-256 和 Electron 更新 manifest，最后将草稿
